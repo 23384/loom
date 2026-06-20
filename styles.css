@@ -1,0 +1,153 @@
+.loom-codeblock-shell {
+  position: relative;
+}
+
+.loom-code-toolbar {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: flex;
+  gap: 0.35rem;
+  z-index: 4;
+  padding: 0.25rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
+  background: color-mix(in srgb, var(--background-primary) 88%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.loom-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.loom-toolbar-button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.loom-toolbar-button.is-running svg,
+.loom-spinner {
+  animation: loom-spin 0.9s linear infinite;
+}
+
+.loom-inline-output-host {
+  margin-top: 0.65rem;
+}
+
+.loom-output-panel {
+  margin-top: 0.5rem;
+  border-radius: 14px;
+  border: 1px solid var(--background-modifier-border);
+  background: color-mix(in srgb, var(--background-secondary) 92%, transparent);
+  overflow: hidden;
+}
+
+.loom-output-panel.is-hidden {
+  display: none;
+}
+
+.loom-output-panel.is-success {
+  border-color: color-mix(in srgb, var(--color-green) 40%, var(--background-modifier-border));
+}
+
+.loom-output-panel.is-warning {
+  border-color: color-mix(in srgb, var(--color-orange) 45%, var(--background-modifier-border));
+}
+
+.loom-output-panel.is-failure {
+  border-color: color-mix(in srgb, var(--color-red) 48%, var(--background-modifier-border));
+}
+
+.loom-output-panel.is-running {
+  border-style: dashed;
+}
+
+.loom-output-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.7rem 0.9rem;
+  background: color-mix(in srgb, var(--background-primary-alt) 65%, transparent);
+}
+
+.loom-output-badge,
+.loom-spinner {
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--text-muted);
+}
+
+.loom-output-title {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.loom-output-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.loom-output-body {
+  padding: 0.8rem 0.9rem 0.95rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.loom-output-stream {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.loom-output-stream-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.loom-output-pre {
+  margin: 0;
+  padding: 0.75rem 0.8rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background-primary) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-monospace);
+  font-size: 0.87rem;
+  line-height: 1.45;
+}
+
+.loom-output-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.loom-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+@keyframes loom-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
