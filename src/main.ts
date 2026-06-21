@@ -538,8 +538,17 @@ export default class loomPlugin extends Plugin {
           return;
         }
 
-        const pre = el.querySelector("pre") ?? el;
-        ctx.addChild(new loomToolbarRenderChild(el, this, block, pre as HTMLElement));
+        // If pre is missing (Reading Mode / print context), render the code block element
+        let pre = el.querySelector("pre") as HTMLElement | null;
+        if (!pre) {
+          pre = el.createEl("pre");
+          pre.addClass(`language-${normalizedAlias}`);
+          const code = pre.createEl("code");
+          code.addClass(`language-${normalizedAlias}`);
+          code.setText(source);
+        }
+
+        ctx.addChild(new loomToolbarRenderChild(el, this, block, pre));
       });
     }
   }
