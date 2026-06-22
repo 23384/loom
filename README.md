@@ -89,7 +89,7 @@ The parser skips these regions and generated output blocks are never executed
 
 ## Container execution
 
-Notes can opt into Docker execution with frontmatter:
+Notes can opt into container or VM execution with frontmatter:
 
 ```yaml
 loom-container: py-sandbox
@@ -105,6 +105,7 @@ Each group needs a `config.json`:
 
 ```json
 {
+  "runtime": "docker",
   "image": "python:3.12-slim",
   "languages": {
     "python": {
@@ -115,9 +116,71 @@ Each group needs a `config.json`:
 }
 ```
 
-If the group has a Dockerfile then loom builds it as `loom-container-<group-name>` and uses that image for execution. The group dir is mounted into the container as `/workspace` and temp source files are written there/removed after the run
+Optional health checks can be added at the group level or under `qemu` / `custom`:
 
-Make sure Docker is installed and running on the host
+```json
+{
+  "healthCheck": {
+    "command": "docker info",
+    "positiveResponse": "Server Version",
+    "negativeResponse": "Cannot connect"
+  }
+}
+```
+
+QEMU ex:
+
+```json
+{
+  "runtime": "qemu",
+  "qemu": {
+    "sshTarget": "loom-vm",
+    "remoteWorkspace": "/workspace",
+    "sshArgs": "-o BatchMode=yes",
+    "startCommand": "./start-vm.sh",
+    "buildCommand": "./build-image.sh",
+    "teardownCommand": "./stop-vm.sh",
+    "healthCheck": {
+      "command": "ssh loom-vm true"
+    }
+  },
+  "languages": {
+    "c": {
+      "command": "gcc {file} -o /tmp/loom-c && /tmp/loom-c",
+      "extension": ".c"
+    }
+  }
+}
+```
+
+Custom wrapper:
+
+```json
+{
+  "runtime": "custom",
+  "custom": {
+    "executable": "./loom-runtime.sh",
+    "args": "{request}",
+    "build": "./build.sh",
+    "commandStructure": "{command}",
+    "teardown": "./teardown.sh",
+    "healthCheck": {
+      "command": "./loom-runtime.sh --health",
+      "positiveResponse": "ok"
+    }
+  },
+  "languages": {
+    "python": {
+      "command": "python3 {file}",
+      "extension": ".py"
+    }
+  }
+}
+```
+
+For custom runtimes loom writes a request JSON file and passes its path through `{request}` and the relevant runtime config.
+
+`{group}` and `{groupPath}` are also available in wrapper args
 
 
 ## Toolchain(s)
