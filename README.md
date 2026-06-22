@@ -153,6 +153,42 @@ QEMU ex:
 }
 ```
 
+Managed QEMU:
+
+```json
+{
+  "runtime": "qemu",
+  "qemu": {
+    "sshTarget": "loom-vm",
+    "remoteWorkspace": "/workspace",
+    "sshArgs": "-o BatchMode=yes -p 2222",
+    "manager": {
+      "enabled": true,
+      "executable": "qemu-system-x86_64",
+      "args": "-m 2048 -smp 2 -nographic -netdev user,id=net0,hostfwd=tcp::2222-:22 -device virtio-net-pci,netdev=net0",
+      "image": "vm.qcow2",
+      "imageFormat": "qcow2",
+      "pidFile": ".loom-qemu.pid",
+      "logFile": "qemu.log",
+      "readinessTimeoutMs": 60000,
+      "shutdownCommand": "ssh -p 2222 loom-vm sudo poweroff",
+      "persist": true
+    },
+    "healthCheck": {
+      "command": "ssh -p 2222 loom-vm true"
+    }
+  },
+  "languages": {
+    "python": {
+      "command": "python3 {file}",
+      "extension": ".py"
+    }
+  }
+}
+```
+
+When `qemu.manager.enabled` is true loom starts QEMU as a detached local process, writes a PID file, polls the QEMU health check until the guest is ready, executes through SSH, and optionally shuts the VM down when `"persist": false`.
+
 Custom wrapper:
 
 ```json

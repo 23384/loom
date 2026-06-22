@@ -1,7 +1,8 @@
 import { Notice, type App, type TFile } from "obsidian";
-import { existsSync } from "fs";
+import { closeSync, existsSync, openSync } from "fs";
 import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import { basename, join, normalize as normalizeFsPath, posix as posixPath } from "path";
+import { spawn } from "child_process";
 import { runProcess } from "./processRunner";
 import { splitCommandLine } from "../utils/command";
 import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult } from "../types";
@@ -28,6 +29,24 @@ interface loomQemuConfig {
   buildCommand?: string;
   teardownCommand?: string;
   healthCheck?: loomCommandExpectation;
+  manager?: loomQemuManagerConfig;
+}
+
+interface loomQemuManagerConfig {
+  enabled: boolean;
+  executable?: string;
+  args?: string;
+  image?: string;
+  imageFormat?: string;
+  pidFile?: string;
+  logFile?: string;
+  readinessTimeoutMs?: number;
+  readinessIntervalMs?: number;
+  bootDelayMs?: number;
+  shutdownCommand?: string;
+  shutdownTimeoutMs?: number;
+  killSignal?: NodeJS.Signals;
+  persist?: boolean;
 }
 
 interface loomCustomRuntimeConfig {
@@ -115,6 +134,9 @@ export class loomContainerRunner {
             }
             if (config.runtime === "qemu" && config.qemu?.sshTarget) {
               pieces.push(`ssh: ${config.qemu.sshTarget}`);
+            }
+            if (config.runtime === "qemu" && config.qemu?.manager?.enabled) {
+              pieces.push(`manager: ${await this.getManagedQemuStatus(groupPath, config.qemu.manager)}`);
             }
             if (config.runtime === "custom" && config.custom?.executable) {
               pieces.push(`wrapper: ${config.custom.executable}`);
@@ -225,6 +247,7 @@ export class loomContainerRunner {
   ): Promise<loomRunResult> {
     const qemu = this.requireQemuConfig(config);
     await this.runOptionalCommand(qemu.startCommand, groupPath, context.timeoutMs, context.signal, `container:${groupName}:qemu:start`, `QEMU ${groupName} start`);
+    await this.ensureManagedQemu(groupName, groupPath, qemu, context.timeoutMs, context.signal);
     await this.runHealthCheck(qemu.healthCheck, groupPath, context.timeoutMs, context.signal, `container:${groupName}:qemu:health`, `QEMU ${groupName} health check`);
 
     try {
@@ -249,6 +272,7 @@ export class loomContainerRunner {
       });
     } finally {
       await this.runOptionalCommand(qemu.teardownCommand, groupPath, context.timeoutMs, context.signal, `container:${groupName}:qemu:teardown`, `QEMU ${groupName} teardown`);
+      await this.stopManagedQemuIfNeeded(groupName, groupPath, qemu, context.timeoutMs, context.signal);
     }
   }
 
@@ -455,6 +479,33 @@ export class loomContainerRunner {
       buildCommand: optionalString(data.buildCommand),
       teardownCommand: optionalString(data.teardownCommand),
       healthCheck: this.readHealthCheck(data.healthCheck, "Container config qemu.healthCheck"),
+      manager: this.readQemuManagerConfig(data.manager),
+    };
+  }
+
+  private readQemuManagerConfig(value: unknown): loomQemuManagerConfig | undefined {
+    if (value == null) {
+      return undefined;
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("Container config qemu.manager must be an object.");
+    }
+    const data = value as Record<string, unknown>;
+    return {
+      enabled: data.enabled !== false,
+      executable: optionalString(data.executable),
+      args: optionalString(data.args),
+      image: optionalString(data.image),
+      imageFormat: optionalString(data.imageFormat),
+      pidFile: optionalString(data.pidFile),
+      logFile: optionalString(data.logFile),
+      readinessTimeoutMs: optionalPositiveInteger(data.readinessTimeoutMs, "Container config qemu.manager.readinessTimeoutMs"),
+      readinessIntervalMs: optionalPositiveInteger(data.readinessIntervalMs, "Container config qemu.manager.readinessIntervalMs"),
+      bootDelayMs: optionalNonNegativeInteger(data.bootDelayMs, "Container config qemu.manager.bootDelayMs"),
+      shutdownCommand: optionalString(data.shutdownCommand),
+      shutdownTimeoutMs: optionalPositiveInteger(data.shutdownTimeoutMs, "Container config qemu.manager.shutdownTimeoutMs"),
+      killSignal: optionalSignal(data.killSignal, "Container config qemu.manager.killSignal"),
+      persist: typeof data.persist === "boolean" ? data.persist : undefined,
     };
   }
 
@@ -583,6 +634,179 @@ export class loomContainerRunner {
     });
   }
 
+  private async ensureManagedQemu(groupName: string, groupPath: string, qemu: loomQemuConfig, timeoutMs: number, signal: AbortSignal): Promise<void> {
+    const manager = qemu.manager;
+    if (!manager?.enabled) {
+      return;
+    }
+
+    const pidPath = this.resolveGroupFilePath(groupPath, manager.pidFile || ".loom-qemu.pid");
+    const existingPid = await this.readPidFile(pidPath);
+    if (existingPid && this.isProcessRunning(existingPid)) {
+      await this.waitForManagedQemuReadiness(groupName, groupPath, qemu, timeoutMs, signal);
+      return;
+    }
+
+    if (existingPid) {
+      await rm(pidPath, { force: true });
+    }
+
+    const executable = manager.executable || "qemu-system-x86_64";
+    const args = this.buildManagedQemuArgs(groupPath, manager);
+    if (!args.length) {
+      throw new Error(`QEMU manager for ${groupName} needs qemu.manager.args or qemu.manager.image.`);
+    }
+
+    const logPath = manager.logFile ? this.resolveGroupFilePath(groupPath, manager.logFile) : null;
+    const logFd = logPath ? openSync(logPath, "a") : null;
+    try {
+      const child = spawn(executable, args, {
+        cwd: groupPath,
+        detached: true,
+        stdio: ["ignore", logFd ?? "ignore", logFd ?? "ignore"],
+      });
+
+      child.on("error", () => undefined);
+      child.unref();
+
+      if (!child.pid) {
+        throw new Error(`QEMU manager for ${groupName} did not return a process id.`);
+      }
+
+      await writeFile(pidPath, `${child.pid}\n`, "utf8");
+      await this.waitForManagedQemuReadiness(groupName, groupPath, qemu, timeoutMs, signal);
+    } finally {
+      if (logFd != null) {
+        closeSync(logFd);
+      }
+    }
+  }
+
+  private buildManagedQemuArgs(groupPath: string, manager: loomQemuManagerConfig): string[] {
+    const args = splitCommandLine(manager.args || "");
+    if (manager.image) {
+      const imagePath = this.resolveGroupFilePath(groupPath, manager.image);
+      args.push("-drive", `file=${imagePath},if=virtio,format=${manager.imageFormat || "qcow2"}`);
+    }
+    return args;
+  }
+
+  private async waitForManagedQemuReadiness(
+    groupName: string,
+    groupPath: string,
+    qemu: loomQemuConfig,
+    timeoutMs: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const manager = qemu.manager;
+    if (!manager?.enabled) {
+      return;
+    }
+
+    if (!qemu.healthCheck) {
+      await sleepWithSignal(manager.bootDelayMs ?? 0, signal);
+      return;
+    }
+
+    const timeout = Math.min(manager.readinessTimeoutMs ?? 60_000, Math.max(timeoutMs, 1));
+    const interval = manager.readinessIntervalMs ?? 1_000;
+    const startedAt = Date.now();
+    let lastError = "";
+
+    while (Date.now() - startedAt <= timeout) {
+      if (signal.aborted) {
+        throw new Error(`QEMU ${groupName} readiness wait cancelled.`);
+      }
+
+      try {
+        await this.runHealthCheck(qemu.healthCheck, groupPath, Math.min(interval, timeout), signal, `container:${groupName}:qemu:ready`, `QEMU ${groupName} readiness check`);
+        return;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+
+      await sleepWithSignal(interval, signal);
+    }
+
+    throw new Error(`QEMU ${groupName} did not become ready within ${timeout} ms${lastError ? `: ${lastError}` : "."}`);
+  }
+
+  private async stopManagedQemuIfNeeded(groupName: string, groupPath: string, qemu: loomQemuConfig, timeoutMs: number, signal: AbortSignal): Promise<void> {
+    const manager = qemu.manager;
+    if (!manager?.enabled || manager.persist !== false) {
+      return;
+    }
+
+    const pidPath = this.resolveGroupFilePath(groupPath, manager.pidFile || ".loom-qemu.pid");
+    const pid = await this.readPidFile(pidPath);
+    if (!pid) {
+      return;
+    }
+
+    if (manager.shutdownCommand) {
+      await this.runOptionalCommand(
+        manager.shutdownCommand,
+        groupPath,
+        Math.min(manager.shutdownTimeoutMs ?? timeoutMs, timeoutMs),
+        signal,
+        `container:${groupName}:qemu:shutdown`,
+        `QEMU ${groupName} shutdown`,
+      );
+    } else if (this.isProcessRunning(pid)) {
+      process.kill(pid, manager.killSignal || "SIGTERM");
+    }
+
+    const stopped = await this.waitForProcessExit(pid, manager.shutdownTimeoutMs ?? 10_000, signal);
+    if (!stopped && this.isProcessRunning(pid)) {
+      process.kill(pid, "SIGKILL");
+      await this.waitForProcessExit(pid, 2_000, signal);
+    }
+
+    await rm(pidPath, { force: true });
+  }
+
+  private async getManagedQemuStatus(groupPath: string, manager: loomQemuManagerConfig): Promise<string> {
+    const pidPath = this.resolveGroupFilePath(groupPath, manager.pidFile || ".loom-qemu.pid");
+    const pid = await this.readPidFile(pidPath);
+    if (!pid) {
+      return "stopped";
+    }
+    return this.isProcessRunning(pid) ? `running pid ${pid}` : `stale pid ${pid}`;
+  }
+
+  private async readPidFile(pidPath: string): Promise<number | null> {
+    try {
+      const value = (await readFile(pidPath, "utf8")).trim();
+      const pid = Number.parseInt(value, 10);
+      return Number.isInteger(pid) && pid > 0 ? pid : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private isProcessRunning(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async waitForProcessExit(pid: number, timeoutMs: number, signal: AbortSignal): Promise<boolean> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt <= timeoutMs) {
+      if (signal.aborted) {
+        return false;
+      }
+      if (!this.isProcessRunning(pid)) {
+        return true;
+      }
+      await sleepWithSignal(250, signal);
+    }
+    return !this.isProcessRunning(pid);
+  }
+
   private async runCustomWrapper(
     groupName: string,
     groupPath: string,
@@ -676,6 +900,15 @@ export class loomContainerRunner {
     return normalizeFsPath(join(this.getContainersPath(), safeName));
   }
 
+  private resolveGroupFilePath(groupPath: string, filePath: string): string {
+    const safePath = normalizeFsPath(join(groupPath, filePath));
+    const normalizedGroupPath = normalizeFsPath(groupPath);
+    if (safePath !== normalizedGroupPath && !safePath.startsWith(`${normalizedGroupPath}/`)) {
+      throw new Error(`Invalid QEMU manager path outside container group: ${filePath}`);
+    }
+    return safePath;
+  }
+
   private imageNameForGroup(groupName: string): string {
     return `loom-container-${groupName.toLowerCase().replace(/[^a-z0-9_.-]/g, "-")}`;
   }
@@ -692,6 +925,51 @@ export function showDockerNotice(message: string): void {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function optionalPositiveInteger(value: unknown, label: string): number | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive integer.`);
+  }
+  return value;
+}
+
+function optionalNonNegativeInteger(value: unknown, label: string): number | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer.`);
+  }
+  return value;
+}
+
+function optionalSignal(value: unknown, label: string): NodeJS.Signals | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  if (typeof value !== "string" || !/^SIG[A-Z0-9]+$/.test(value)) {
+    throw new Error(`${label} must be a signal name like SIGTERM.`);
+  }
+  return value as NodeJS.Signals;
+}
+
+async function sleepWithSignal(durationMs: number, signal: AbortSignal): Promise<void> {
+  if (durationMs <= 0 || signal.aborted) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, durationMs);
+    const abort = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function runtimeLabel(runtime: loomContainerRuntime): string {
