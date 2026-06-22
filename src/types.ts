@@ -10,11 +10,31 @@ export interface loomCodeBlock {
   languageAlias: string;
   sourceLanguage: string;
   content: string;
+  attributes: Record<string, string>;
   sourceReference?: loomSourceReference;
+  executionContext: loomExecutionContextOverride;
   startLine: number;
   endLine: number;
   fenceStart: number;
   fenceEnd: number;
+}
+
+export interface loomExecutionContextOverride {
+  containerGroup?: string;
+  disableContainer?: boolean;
+  workingDirectory?: string;
+  timeoutMs?: number;
+}
+
+export interface loomResolvedExecutionContext {
+  containerGroup?: string;
+  workingDirectory: string;
+  timeoutMs: number;
+  source: {
+    container: "global" | "note" | "block" | "none";
+    workingDirectory: "global" | "note" | "block" | "default";
+    timeout: "global" | "note" | "block";
+  };
 }
 
 export interface loomSourceReference {
@@ -112,6 +132,12 @@ export interface loomPluginSettings {
   javaCompilerExecutable: string;
   javaExecutable: string;
   llvmInterpreterExecutable: string;
+  ebpfClangExecutable: string;
+  ebpfBpftoolExecutable: string;
+  ebpfLlvmObjdumpExecutable: string;
+  ebpfIncludePaths: string;
+  ebpfAllowKernelLoad: boolean;
+  bpftraceExecutable: string;
   leanExecutable: string;
   coqExecutable: string;
   smtExecutable: string;
@@ -119,6 +145,9 @@ export interface loomPluginSettings {
   autoRunOnFileOpen: boolean;
   extractedSourcePreviewMode: "collapsed" | "expanded" | "hidden";
   showLanguageCapabilityMetadata: boolean;
+  languageConfigurationVersion: number;
+  enabledLanguagePacks: string[];
+  enabledLanguages: string[];
   customLanguages: loomCustomLanguage[];
   pdfExportMode: "both" | "code" | "output";
   defaultContainerGroup: string;

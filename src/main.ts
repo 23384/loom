@@ -12,12 +12,15 @@ import { RangeSetBuilder, StateEffect } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, ViewUpdate, WidgetType } from "@codemirror/view";
 import { dirname } from "path";
 import { loomContainerRunner } from "./execution/containerRunner";
+import { resolveExecutionContext } from "./executionContext";
 import { addLlvmDecorations, highlightLlvmElement } from "./llvmHighlight";
 import { findBlockAtLine, getSupportedLanguageAliases, parseMarkdownCodeBlocks } from "./parser";
 import { getLanguageCapability } from "./languageCapabilities";
+import { normalizeLanguageConfiguration } from "./languagePackages";
 import { NodeRunner } from "./runners/node";
 import { CustomLanguageRunner } from "./runners/custom";
 import { InterpretedRunner } from "./runners/interpreted";
+import { EbpfRunner } from "./runners/ebpf";
 import { LlvmRunner } from "./runners/llvm";
 import { ManagedCompiledRunner } from "./runners/managedCompiled";
 import { NativeCompiledRunner } from "./runners/nativeCompiled";
@@ -25,13 +28,14 @@ import { OcamlRunner } from "./runners/ocaml";
 import { PythonRunner } from "./runners/python";
 import { ProofRunner } from "./runners/proof";
 import { loomRunnerRegistry } from "./runners/registry";
-import { DEFAULT_SETTINGS, loomSettingTab, showExecutionDisabledNotice } from "./settings";
+import { DEFAULT_SETTINGS } from "./defaultSettings";
+import { loomSettingTab, showExecutionDisabledNotice } from "./settings";
 import { resolveReferencedSource } from "./sourceExtract";
 import { buildSourceReferenceHarness } from "./sourceHarness";
 import { createCodeBlockToolbar } from "./ui/codeBlockToolbar";
 import { createOutputPanel, createRunningPanel } from "./ui/outputPanel";
 import { splitCommandLine } from "./utils/command";
-import type { loomCodeBlock, loomPluginSettings, loomStoredOutput } from "./types";
+import type { loomCodeBlock, loomPluginSettings, loomResolvedExecutionContext, loomStoredOutput } from "./types";
 
 const loomRefreshEffect = StateEffect.define<void>();
 
@@ -152,6 +156,7 @@ export default class loomPlugin extends Plugin {
     new NativeCompiledRunner(),
     new InterpretedRunner(),
     new ManagedCompiledRunner(),
+    new EbpfRunner(),
     new LlvmRunner(),
     new ProofRunner(),
     new CustomLanguageRunner(),
@@ -276,6 +281,7 @@ export default class loomPlugin extends Plugin {
       ...DEFAULT_SETTINGS,
       ...(await this.loadData()),
     };
+    normalizeLanguageConfiguration(this.settings);
   }
 
   async saveSettings(): Promise<void> {
@@ -389,8 +395,10 @@ export default class loomPlugin extends Plugin {
   async runAllBlocksInFile(file: TFile): Promise<void> {
     const source = await this.app.vault.cachedRead(file);
     const blocks = parseMarkdownCodeBlocks(file.path, source, this.settings);
-    const containerGroup = this.containerRunner.getContainerGroupName(file) || this.settings.defaultContainerGroup;
-    const supportedBlocks = containerGroup ? blocks : blocks.filter((block) => this.registry.getRunnerForBlock(block, this.settings));
+    const supportedBlocks = blocks.filter((block) => {
+      const executionContext = resolveExecutionContext(this.app, file, block, this.settings);
+      return executionContext.containerGroup || this.registry.getRunnerForBlock(block, this.settings);
+    });
 
     if (!supportedBlocks.length) {
       new Notice("No supported loom blocks found in the current note.");
@@ -425,8 +433,8 @@ export default class loomPlugin extends Plugin {
       return;
     }
 
-    const workingDirectory = this.resolveWorkingDirectory(file);
-    const containerGroup = this.containerRunner.getContainerGroupName(file) || this.settings.defaultContainerGroup;
+    const executionContext = resolveExecutionContext(this.app, file, block, this.settings);
+    const containerGroup = executionContext.containerGroup;
     const runner = containerGroup ? null : this.registry.getRunnerForBlock(block, this.settings);
     if (!runner) {
       if (!containerGroup) {
@@ -438,8 +446,8 @@ export default class loomPlugin extends Plugin {
     const controller = new AbortController();
     const runContext = {
       file,
-      workingDirectory,
-      timeoutMs: this.settings.defaultTimeoutMs,
+      workingDirectory: executionContext.workingDirectory,
+      timeoutMs: executionContext.timeoutMs,
       signal: controller.signal,
     };
     this.running.set(block.id, controller);
@@ -463,6 +471,10 @@ export default class loomPlugin extends Plugin {
       if (resolvedBlock.sourcePreview) {
         const sourceNotice = `Ran extracted source from ${resolvedBlock.sourcePreview.description}.`;
         result.warning = result.warning ? `${sourceNotice}\n${result.warning}` : sourceNotice;
+      }
+      if (this.hasExplicitExecutionContext(executionContext)) {
+        const contextNotice = this.formatExecutionContextNotice(executionContext);
+        result.warning = result.warning ? `${contextNotice}\n${result.warning}` : contextNotice;
       }
 
       this.outputs.set(block.id, {
@@ -539,17 +551,6 @@ export default class loomPlugin extends Plugin {
     });
   }
 
-  private resolveWorkingDirectory(file: TFile): string {
-    if (this.settings.workingDirectory.trim()) {
-      return this.settings.workingDirectory.trim();
-    }
-
-    const adapterBasePath = (this.app.vault.adapter as { basePath?: string }).basePath ?? "";
-    const fileFolder = dirname(file.path);
-    const resolved = fileFolder === "." ? adapterBasePath : `${adapterBasePath}/${fileFolder}`;
-    return resolved || process.cwd();
-  }
-
   private async resolveExecutableBlock(file: TFile, block: loomCodeBlock): Promise<{ block: loomCodeBlock; sourcePreview?: loomStoredOutput["sourcePreview"] }> {
     if (!block.sourceReference) {
       return { block };
@@ -562,7 +563,7 @@ export default class loomPlugin extends Plugin {
     }
 
     const harness = buildSourceReferenceHarness(block);
-    const externalExtractor = this.getCustomLanguageExtractor(block.language, file);
+    const externalExtractor = this.getCustomLanguageExtractor(block, file);
     const resolved = await resolveReferencedSource(
       await this.app.vault.cachedRead(sourceFile),
       { ...block.sourceReference, filePath: referencePath },
@@ -891,7 +892,21 @@ export default class loomPlugin extends Plugin {
     );
   }
 
-  private getCustomLanguageExtractor(languageId: string, file: TFile): { mode: "command" | "transpile-c"; language: string; executable: string; args: string[]; workingDirectory: string; timeoutMs: number } | undefined {
+  private hasExplicitExecutionContext(context: loomResolvedExecutionContext): boolean {
+    return context.source.container !== "none" || context.source.workingDirectory !== "default" || context.source.timeout !== "global";
+  }
+
+  private formatExecutionContextNotice(context: loomResolvedExecutionContext): string {
+    const pieces = [
+      `container=${context.containerGroup ?? "native"} (${context.source.container})`,
+      `cwd=${context.workingDirectory} (${context.source.workingDirectory})`,
+      `timeout=${context.timeoutMs}ms (${context.source.timeout})`,
+    ];
+    return `Execution context: ${pieces.join(", ")}.`;
+  }
+
+  private getCustomLanguageExtractor(block: loomCodeBlock, file: TFile): { mode: "command" | "transpile-c"; language: string; executable: string; args: string[]; workingDirectory: string; timeoutMs: number } | undefined {
+    const languageId = block.language;
     const normalized = languageId.trim().toLowerCase();
     const language = this.settings.customLanguages.find((candidate) => {
       const name = candidate.name.trim().toLowerCase();
@@ -912,13 +927,14 @@ export default class loomPlugin extends Plugin {
       return undefined;
     }
 
+    const executionContext = resolveExecutionContext(this.app, file, block, this.settings);
     return {
       mode,
       language: language.name,
       executable,
       args: splitCommandLine(args),
-      workingDirectory: this.resolveWorkingDirectory(file),
-      timeoutMs: this.settings.defaultTimeoutMs,
+      workingDirectory: executionContext.workingDirectory,
+      timeoutMs: executionContext.timeoutMs,
     };
   }
 

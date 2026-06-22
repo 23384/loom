@@ -210,6 +210,19 @@
   font-weight: 600;
 }
 
+.loom-language-package {
+  margin: 0.45rem 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.loom-language-package > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
 .loom-custom-language-body {
   margin-top: 0.5rem;
 }

@@ -72,6 +72,20 @@ const BUILT_IN_CAPABILITIES: Record<string, loomLanguageCapability> = {
     callHarness: "raw",
     sourcePreview: true,
   },
+  "ebpf-c": {
+    language: "ebpf-c",
+    symbolExtraction: "top-level",
+    dependencyTracing: "top-level",
+    callHarness: "raw",
+    sourcePreview: true,
+  },
+  bpftrace: {
+    language: "bpftrace",
+    symbolExtraction: "generic",
+    dependencyTracing: "generic",
+    callHarness: "raw",
+    sourcePreview: true,
+  },
 };
 
 export function getLanguageCapability(language: loomNormalizedLanguage, hasExternalExtractor = false): loomLanguageCapability {
