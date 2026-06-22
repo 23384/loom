@@ -380,7 +380,7 @@ export default class loomPlugin extends Plugin {
   async runAllBlocksInFile(file: TFile): Promise<void> {
     const source = await this.app.vault.cachedRead(file);
     const blocks = parseMarkdownCodeBlocks(file.path, source, this.settings);
-    const containerGroup = this.containerRunner.getContainerGroupName(file);
+    const containerGroup = this.containerRunner.getContainerGroupName(file) || this.settings.defaultContainerGroup;
     const supportedBlocks = containerGroup ? blocks : blocks.filter((block) => this.registry.getRunnerForBlock(block, this.settings));
 
     if (!supportedBlocks.length) {
@@ -417,7 +417,7 @@ export default class loomPlugin extends Plugin {
     }
 
     const workingDirectory = this.resolveWorkingDirectory(file);
-    const containerGroup = this.containerRunner.getContainerGroupName(file);
+    const containerGroup = this.containerRunner.getContainerGroupName(file) || this.settings.defaultContainerGroup;
     const runner = containerGroup ? null : this.registry.getRunnerForBlock(block, this.settings);
     if (!runner) {
       if (!containerGroup) {
@@ -634,6 +634,25 @@ export default class loomPlugin extends Plugin {
     }
 
     await this.enforceSourceModeForLeaf(view.leaf);
+  }
+
+  async disableSourceModeForActiveView(): Promise<void> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) {
+      return;
+    }
+
+    const leaf = view.leaf;
+    const viewState = leaf.getViewState();
+    const state = { ...(viewState.state ?? {}) } as Record<string, unknown>;
+    
+    if (state.mode === "source" && state.source === true) {
+      state.source = false;
+      await leaf.setViewState({
+        ...viewState,
+        state,
+      });
+    }
   }
 
   private async enforceSourceModeForLeaf(leaf: WorkspaceLeaf): Promise<void> {

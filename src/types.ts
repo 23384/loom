@@ -86,6 +86,7 @@ export interface loomPluginSettings {
   autoRunOnFileOpen: boolean;
   customLanguages: loomCustomLanguage[];
   pdfExportMode: "both" | "code" | "output";
+  defaultContainerGroup: string;
 }
 
 export interface loomRunState {

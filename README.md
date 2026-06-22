@@ -95,6 +95,9 @@ Notes can opt into container or VM execution with frontmatter:
 loom-container: py-sandbox
 ```
 
+Alternatively, you can configure a **Default containerization group** in the Loom settings tab. If configured, any note that does not explicitly specify a `loom-container` frontmatter will fall back to running code blocks inside this default group.
+
+### Container Group Directory
 Container groups live inside the plugin folder:
 
 ```text
@@ -115,6 +118,21 @@ Each group needs a `config.json`:
   }
 }
 ```
+
+### Supported Runtimes
+
+Loom supports the following runtimes under `"runtime"` in `config.json`:
+- `"docker"` / `"podman"`: Standard OCI container execution (mounts the group folder and runs your block command). If a `Dockerfile` exists inside the group folder, Loom builds and uses that image.
+- `"wsl"`: Runs commands inside Windows Subsystem for Linux (WSL). You can specify a WSL distribution name in the `"image"` field (e.g., `"Ubuntu"`, `"Debian"`), or omit it to run in your default WSL distro.
+- `"qemu"`: Runs commands on a remote VM using SSH, with optional automated QEMU local process management.
+- `"custom"`: Delegates container building, running, and teardown to a custom local executable wrapper.
+
+### Visual Settings & Environment Manager
+Loom provides a visual, tabbed dashboard directly within the plugin's settings tab for managing container environments. Click **Edit** next to any group to access:
+- **General**: Configure the runtime type, fallback image or WSL distro name, QEMU SSH settings, or Custom script configurations.
+- **Languages**: Visually add, remove, and update execution commands and source file extensions for individual languages.
+- **Dockerfile**: Create and edit a `Dockerfile` for Docker/Podman environments directly inside Obsidian.
+- **Raw JSON**: View and edit the group's raw `config.json` configuration file, with automatic syntax validation.
 
 Optional health checks can be added at the group level or under `qemu` / `custom`:
 

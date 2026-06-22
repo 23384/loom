@@ -1,13 +1,13 @@
 import { Notice, type App, type TFile } from "obsidian";
 import { closeSync, existsSync, openSync } from "fs";
-import { mkdir, readFile, rm, writeFile } from "fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "fs/promises";
 import { basename, join, normalize as normalizeFsPath, posix as posixPath } from "path";
 import { spawn } from "child_process";
 import { runProcess } from "./processRunner";
 import { splitCommandLine } from "../utils/command";
 import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult } from "../types";
 
-type loomContainerRuntime = "docker" | "podman" | "qemu" | "custom";
+type loomContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "custom";
 
 interface loomContainerLanguageConfig {
   command: string;
@@ -97,7 +97,7 @@ export class loomContainerRunner {
   constructor(
     private readonly app: App,
     private readonly pluginDir: string,
-  ) {}
+  ) { }
 
   getContainerGroupName(file: TFile): string | null {
     const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
@@ -111,7 +111,6 @@ export class loomContainerRunner {
       return [];
     }
 
-    const { readdir } = await import("fs/promises");
     const entries = await readdir(containersPath, { withFileTypes: true });
     return Promise.all(
       entries
@@ -180,6 +179,8 @@ export class loomContainerRunner {
           return await this.runQemu(groupName, groupPath, config, language, tempFileName, context);
         case "custom":
           return await this.runCustom(groupName, groupPath, config, block, language, tempFileName, tempFilePath, context);
+        case "wsl":
+          return await this.runWslContainer(groupName, groupPath, config, language, tempFileName, context);
       }
     } finally {
       await rm(tempFilePath, { force: true });
@@ -199,6 +200,12 @@ export class loomContainerRunner {
         return this.buildQemu(groupName, groupPath, config, timeoutMs, signal);
       case "custom":
         return this.runCustomWrapper(groupName, groupPath, config, this.createCustomRequest("build", groupName, groupPath, config, timeoutMs), timeoutMs, signal);
+      case "wsl":
+        return this.createSyntheticResult(
+          `container:${groupName}:wsl:build`,
+          `WSL ${groupName} build`,
+          `WSL environment ${config.image || "(default)"} does not require a build step.\n`,
+        );
     }
   }
 
@@ -325,6 +332,49 @@ export class loomContainerRunner {
     return result;
   }
 
+  private async runWslContainer(
+    groupName: string,
+    groupPath: string,
+    config: loomContainerConfig,
+    language: loomContainerLanguageConfig,
+    tempFileName: string,
+    context: loomRunContext,
+  ): Promise<loomRunResult> {
+    const wslGroupPath = this.translateToWslPath(groupPath);
+    const command = language.command.replaceAll("{file}", tempFileName);
+    if (!command.trim()) {
+      throw new Error("WSL command is empty.");
+    }
+
+    const wslArgs = ["bash", "-l", "-c", `cd "${wslGroupPath.replaceAll('"', '\\"')}" && ${command}`];
+    if (config.image?.trim()) {
+      wslArgs.unshift("-d", config.image.trim());
+    }
+
+    return await runProcess({
+      runnerId: `container:${groupName}:wsl`,
+      runnerName: `WSL ${groupName}`,
+      executable: "wsl",
+      args: wslArgs,
+      workingDirectory: groupPath,
+      timeoutMs: context.timeoutMs,
+      signal: context.signal,
+    });
+  }
+
+  private translateToWslPath(windowsPath: string): string {
+    const match = windowsPath.match(/^([A-Za-z]):\\(.*)/);
+    if (match) {
+      const drive = match[1].toLowerCase();
+      const rest = match[2].replace(/\\/g, "/");
+      return `/mnt/${drive}/${rest}`;
+    }
+    if (windowsPath.includes("\\")) {
+      return windowsPath.replace(/\\/g, "/");
+    }
+    return windowsPath;
+  }
+
   private async resolveImage(
     groupName: string,
     groupPath: string,
@@ -449,10 +499,10 @@ export class loomContainerRunner {
     if (value == null) {
       return "docker";
     }
-    if (value === "docker" || value === "podman" || value === "qemu" || value === "custom") {
+    if (value === "docker" || value === "podman" || value === "qemu" || value === "custom" || value === "wsl") {
       return value;
     }
-    throw new Error("Container config runtime must be docker, podman, qemu, or custom.");
+    throw new Error("Container config runtime must be docker, podman, qemu, custom, or wsl.");
   }
 
   private readQemuConfig(value: unknown): loomQemuConfig | undefined {
@@ -903,7 +953,9 @@ export class loomContainerRunner {
   private resolveGroupFilePath(groupPath: string, filePath: string): string {
     const safePath = normalizeFsPath(join(groupPath, filePath));
     const normalizedGroupPath = normalizeFsPath(groupPath);
-    if (safePath !== normalizedGroupPath && !safePath.startsWith(`${normalizedGroupPath}/`)) {
+    const posixSafePath = safePath.replace(/\\/g, "/");
+    const posixGroupPath = normalizedGroupPath.replace(/\\/g, "/");
+    if (posixSafePath !== posixGroupPath && !posixSafePath.startsWith(`${posixGroupPath}/`)) {
       throw new Error(`Invalid QEMU manager path outside container group: ${filePath}`);
     }
     return safePath;
@@ -982,6 +1034,8 @@ function runtimeLabel(runtime: loomContainerRuntime): string {
       return "QEMU";
     case "custom":
       return "Custom";
+    case "wsl":
+      return "WSL";
   }
 }
 
