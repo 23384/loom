@@ -221,6 +221,8 @@ hello
 
 The parser skips these regions and generated output blocks are never executed
 
+Output panels can also be capped to a visible line window while keeping the full stdout, stderr, and warning text scrollable in the panel. Set **Visible output lines** in settings for a vault wide default, or use `loom-output-lines=20` on a specific block. Use `0` to keep output unlimited
+
 ## Partial source extraction
 
 loom can run part of another file while keeping the call site in your note. Add source attributes to the fence info string:

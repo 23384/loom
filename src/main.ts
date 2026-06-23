@@ -340,7 +340,9 @@ export default class loomPlugin extends Plugin {
       return;
     }
 
-    container.appendChild(createOutputPanel(output));
+    container.appendChild(createOutputPanel(output, {
+      defaultVisibleLines: this.settings.outputVisibleLines ?? 0,
+    }));
   }
 
   async runActiveBlockById(blockId: string): Promise<void> {
