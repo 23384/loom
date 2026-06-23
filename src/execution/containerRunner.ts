@@ -1,4 +1,4 @@
-import { Notice, type App, type TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 import { closeSync, existsSync, openSync } from "fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "fs/promises";
 import { basename, join, normalize as normalizeFsPath, posix as posixPath } from "path";
@@ -324,7 +324,11 @@ export class loomContainerRunner {
     settings: loomPluginSettings,
   ): Promise<loomRunResult> {
     const image = await this.resolveImage(groupName, groupPath, config, context, settings);
-    const command = splitCommandLine(language.command!.replaceAll("{file}", tempFileName));
+    const workspacePath = "/workspace";
+    const containerFile = posixPath.join(workspacePath, tempFileName);
+    const workingDirectory = normalizeFsPath(context.workingDirectory || groupPath);
+    const useContextWorkingDirectory = workingDirectory !== normalizeFsPath(groupPath);
+    const command = splitCommandLine(language.command!.replaceAll("{file}", containerFile));
     if (!command.length) {
       throw new Error("Container command is empty.");
     }
@@ -338,9 +342,10 @@ export class loomContainerRunner {
         "--rm",
         ...(context.stdin != null ? ["-i"] : []),
         "-v",
-        `${groupPath}:/workspace`,
-        "-w",
-        "/workspace",
+        `${groupPath}:${workspacePath}`,
+        ...(useContextWorkingDirectory
+          ? ["-v", `${workingDirectory}:/loom-cwd`, "-w", "/loom-cwd"]
+          : ["-w", workspacePath]),
         ...this.ociElevationArgs(config),
         image,
         ...command,
@@ -1606,10 +1611,6 @@ function shellCommand(command: string): string {
 function normalizeExtension(extension: string): string {
   const trimmed = extension.trim();
   return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
-}
-
-export function showDockerNotice(message: string): void {
-  new Notice(message, 8000);
 }
 
 function optionalString(value: unknown): string | undefined {
