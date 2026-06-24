@@ -20,6 +20,7 @@ import { loomContainerRunner } from "./execution/containerRunner";
 import { isCompileContainerGroupAllowed, isCompileFeatureAllowed } from "./buildProfile";
 import { resolveExecutionContext as resolveLoomExecutionContext } from "./executionContext";
 import { addLlvmDecorations } from "./llvmHighlight";
+import { loomLogger, type loomLogInput } from "./logging";
 import { findBlockAtLine, normalizeLanguage, parseMarkdownCodeBlocks } from "./parser";
 import { getLanguageCapability } from "./languageCapabilities";
 import { findEnabledCommandLanguage, normalizeLanguageConfiguration } from "./languagePackages";
@@ -57,6 +58,7 @@ const HASH_IGNORE_FRONTMATTER_KEY = "loom-hash-ignore-frontmatter";
 const HASH_IGNORE_BLOCK_ATTRIBUTES_KEY = "loom-hash-ignore-block-attributes";
 const REPRODUCIBILITY_SNAPSHOT_VERSION = 1;
 const SUPPORTED_PDF_EXPORT_MODES = new Set<loomPluginSettings["pdfExportMode"]>(["both", "code", "output"]);
+const SUPPORTED_LOGGING_NOTE_PATH_MODES = new Set<loomPluginSettings["loggingNotePathMode"]>(["plain", "hash", "omit"]);
 type loomOutputFileMode = "replace" | "append";
 type loomOutputFileFormat = "text" | "json";
 type loomOutputFileStream = "stdout" | "stderr" | "warning" | "metadata";
@@ -353,6 +355,7 @@ export default class loomPlugin extends Plugin {
   private statusBarItemEl!: HTMLElement;
   private editorViews = new Set<EditorView>();
   private lastMarkdownFilePath: string | null = null;
+  private readonly logger = new loomLogger(this.app, () => this.settings);
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -609,6 +612,7 @@ export default class loomPlugin extends Plugin {
     for (const controller of this.running.values()) {
       controller.abort();
     }
+    this.logger.close();
   }
 
   async loadSettings(): Promise<void> {
@@ -712,6 +716,14 @@ export default class loomPlugin extends Plugin {
     const persistedSettings: Partial<loomPluginSettings> = { ...this.settings };
     delete persistedSettings.externalLanguagePacks;
     await this.saveData(persistedSettings);
+    await this.logEvent({
+      type: "loom.settings.changed",
+      message: "Loom settings saved",
+      data: {
+        loggingEnabled: this.settings.loggingEnabled,
+        enableLocalExecution: this.settings.enableLocalExecution,
+      },
+    });
     this.registerCodeBlockProcessors();
     this.notifyAllOutputsChanged();
     this.refreshAllViews();
@@ -729,6 +741,10 @@ export default class loomPlugin extends Plugin {
     return () => {
       this.outputListeners.get(blockId)?.delete(listener);
     };
+  }
+
+  private async logEvent(input: loomLogInput): Promise<void> {
+    await this.logger.log(input);
   }
 
   createToolbarElement(block: loomCodeBlock): HTMLElement {
@@ -869,6 +885,15 @@ export default class loomPlugin extends Plugin {
 
       return lines.join("\n");
     });
+    await this.logEvent({
+      type: "loom.note.modified",
+      message: "Removed Loom snippet",
+      notePath: file.path,
+      block,
+      data: {
+        action: "snippet.removed",
+      },
+    });
 
     this.notifyOutputChanged(blockId);
     this.updateStatusBar();
@@ -901,6 +926,15 @@ export default class loomPlugin extends Plugin {
       this.notifyOutputChanged(block.id);
       await this.removeManagedOutputBlock(file.path, block.id);
     }
+    await this.logEvent({
+      type: "loom.note.modified",
+      message: "Cleared Loom outputs",
+      notePath: file.path,
+      data: {
+        action: "outputs.cleared",
+        blocks: blocks.length,
+      },
+    });
     new Notice("loom outputs cleared.");
   }
 
@@ -914,6 +948,24 @@ export default class loomPlugin extends Plugin {
       target[NOTE_HASH_FRONTMATTER_KEY] = snapshot.noteHash;
       target[CODE_BLOCK_HASHES_FRONTMATTER_KEY] = snapshot.blocks;
     });
+    await this.logEvent({
+      type: "loom.repro.snapshot.saved",
+      message: "Reproducibility snapshot saved",
+      notePath: file.path,
+      data: {
+        noteHash: snapshot.noteHash,
+        blocks: snapshot.blocks.length,
+        policy: snapshot.policy.preset,
+      },
+    });
+    await this.logEvent({
+      type: "loom.note.modified",
+      message: "Wrote reproducibility snapshot frontmatter",
+      notePath: file.path,
+      data: {
+        action: "reproducibility.snapshot.saved",
+      },
+    });
 
     new Notice(`loom reproducibility snapshot saved (${snapshot.blocks.length} block${snapshot.blocks.length === 1 ? "" : "s"}).`);
   }
@@ -922,6 +974,26 @@ export default class loomPlugin extends Plugin {
     const source = await this.app.vault.cachedRead(file);
     const verification = this.createReproducibilityVerification(file.path, source);
     await this.writeReproducibilityVerification(file, verification);
+    await this.logEvent({
+      type: "loom.repro.verify.finished",
+      message: verification.summary,
+      notePath: file.path,
+      data: {
+        status: verification.status,
+        issues: verification.issues.length,
+        verifiedBlocks: verification.blocks.verified,
+        totalBlocks: verification.blocks.total,
+      },
+    });
+    await this.logEvent({
+      type: "loom.note.modified",
+      message: "Wrote reproducibility verification frontmatter",
+      notePath: file.path,
+      data: {
+        action: "reproducibility.verify.finished",
+        status: verification.status,
+      },
+    });
     new Notice(verification.summary, verification.status === "verified" ? 6000 : 12000);
   }
 
@@ -945,6 +1017,15 @@ export default class loomPlugin extends Plugin {
         version: REPRODUCIBILITY_SNAPSHOT_VERSION,
         policy: serializeHashPolicy(policy),
       };
+    });
+    await this.logEvent({
+      type: "loom.note.modified",
+      message: "Updated reproducibility policy",
+      notePath: file.path,
+      data: {
+        action: "reproducibility.policy.changed",
+        policy: presetId,
+      },
     });
     new Notice(`loom reproducibility policy set to ${getHashPolicyPresetDefinition(presetId).label}.`);
   }
@@ -997,6 +1078,15 @@ export default class loomPlugin extends Plugin {
         };
       }
     });
+    await this.logEvent({
+      type: "loom.note.modified",
+      message: "Wrote note hash",
+      notePath: file.path,
+      data: {
+        action: "hash.note",
+        noteHash,
+      },
+    });
 
     if (this.settings.hashCodeBlocks) {
       await this.writeCodeBlockHashesToFrontmatter(file);
@@ -1041,6 +1131,17 @@ export default class loomPlugin extends Plugin {
 
     const entries = await this.writeCodeBlockHashesToFrontmatter(file, source);
     const currentEntry = entries.find((entry) => entry.ordinal === block.ordinal);
+    await this.logEvent({
+      type: "loom.note.modified",
+      message: "Wrote code block hashes",
+      notePath: file.path,
+      block,
+      data: {
+        action: "hash.code-blocks",
+        blocks: entries.length,
+        currentHash: currentEntry?.hash ?? this.createCodeBlockHashEntry(block, readHashPolicy(source)).hash,
+      },
+    });
     new Notice(`loom block hash: ${currentEntry?.hash ?? this.createCodeBlockHashEntry(block, readHashPolicy(source)).hash}`);
   }
 
@@ -1185,6 +1286,7 @@ export default class loomPlugin extends Plugin {
 
     const controller = new AbortController();
     const stdin = await this.resolveBlockStdin(file, block);
+    const runnerName = containerGroup ? `execution group ${containerGroup}` : runner!.displayName;
     const runContext = {
       file,
       workingDirectory: executionContext.workingDirectory,
@@ -1195,6 +1297,21 @@ export default class loomPlugin extends Plugin {
     this.running.set(block.id, controller);
     this.notifyOutputChanged(block.id);
     this.updateStatusBar();
+    await this.logEvent({
+      type: "loom.run.started",
+      message: "Code block started",
+      notePath: file.path,
+      block,
+      stdin,
+      data: {
+        runnerName,
+        containerGroup,
+        workingDirectory: executionContext.workingDirectory,
+        timeoutMs: executionContext.timeoutMs,
+        stdinBytes: stdin?.length ?? 0,
+        executionSource: executionContext.source,
+      },
+    });
 
     try {
       const resolvedBlock = await this.resolveExecutableBlock(file, block);
@@ -1233,7 +1350,12 @@ export default class loomPlugin extends Plugin {
         await this.writeManagedOutputBlock(file, block, result);
       }
 
-      const runnerName = containerGroup ? `execution group ${containerGroup}` : runner!.displayName;
+      await this.logger.logRunFinished(file.path, block, runnerName, result, {
+        containerGroup,
+        workingDirectory: executionContext.workingDirectory,
+        timeoutMs: executionContext.timeoutMs,
+        sourceReference: Boolean(block.sourceReference),
+      });
       new Notice(result.success ? `loom ran ${runnerName} block.` : `loom run failed for ${runnerName}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1256,6 +1378,20 @@ export default class loomPlugin extends Plugin {
           cancelled: false,
         },
       });
+      await this.logEvent({
+        type: "loom.run.failed",
+        message: "Code block failed before result",
+        notePath: file.path,
+        block,
+        stdin,
+        error: message,
+        data: {
+          runnerName,
+          containerGroup,
+          workingDirectory: executionContext.workingDirectory,
+          timeoutMs: executionContext.timeoutMs,
+        },
+      });
       new Notice(`loom error: ${message}`);
     } finally {
       await this.writeCodeBlockHashesIfEnabled(file);
@@ -1271,7 +1407,16 @@ export default class loomPlugin extends Plugin {
     }
 
     try {
-      await this.writeCodeBlockHashesToFrontmatter(file);
+      const entries = await this.writeCodeBlockHashesToFrontmatter(file);
+      await this.logEvent({
+        type: "loom.note.modified",
+        message: "Auto-wrote code block hashes",
+        notePath: file.path,
+        data: {
+          action: "hash.code-blocks.auto",
+          blocks: entries.length,
+        },
+      });
     } catch (error) {
       console.warn("loom: failed to write code block hashes", error);
     }
@@ -1612,6 +1757,31 @@ export default class loomPlugin extends Plugin {
     if (!SUPPORTED_PDF_EXPORT_MODES.has(this.settings.pdfExportMode)) {
       this.settings.pdfExportMode = DEFAULT_SETTINGS.pdfExportMode;
     }
+    this.settings.loggingEnabled = Boolean(this.settings.loggingEnabled);
+    this.settings.loggingGlobalTextEnabled = this.settings.loggingGlobalTextEnabled == null
+      ? DEFAULT_SETTINGS.loggingGlobalTextEnabled
+      : Boolean(this.settings.loggingGlobalTextEnabled);
+    this.settings.loggingGlobalJsonlEnabled = this.settings.loggingGlobalJsonlEnabled == null
+      ? DEFAULT_SETTINGS.loggingGlobalJsonlEnabled
+      : Boolean(this.settings.loggingGlobalJsonlEnabled);
+    this.settings.loggingPerNoteTextEnabled = Boolean(this.settings.loggingPerNoteTextEnabled);
+    this.settings.loggingPerNoteJsonlEnabled = Boolean(this.settings.loggingPerNoteJsonlEnabled);
+    this.settings.loggingProcessEnabled = Boolean(this.settings.loggingProcessEnabled);
+    this.settings.loggingHttpEnabled = Boolean(this.settings.loggingHttpEnabled);
+    this.settings.loggingIncludeCode = Boolean(this.settings.loggingIncludeCode);
+    this.settings.loggingIncludeOutput = Boolean(this.settings.loggingIncludeOutput);
+    this.settings.loggingIncludeInput = Boolean(this.settings.loggingIncludeInput);
+    this.settings.loggingGlobalTextPath = normalizeStringSetting(this.settings.loggingGlobalTextPath, DEFAULT_SETTINGS.loggingGlobalTextPath);
+    this.settings.loggingGlobalJsonlPath = normalizeStringSetting(this.settings.loggingGlobalJsonlPath, DEFAULT_SETTINGS.loggingGlobalJsonlPath);
+    this.settings.loggingPerNoteTextPathPattern = normalizeStringSetting(this.settings.loggingPerNoteTextPathPattern, DEFAULT_SETTINGS.loggingPerNoteTextPathPattern);
+    this.settings.loggingPerNoteJsonlPathPattern = normalizeStringSetting(this.settings.loggingPerNoteJsonlPathPattern, DEFAULT_SETTINGS.loggingPerNoteJsonlPathPattern);
+    this.settings.loggingProcessCommand = normalizeStringSetting(this.settings.loggingProcessCommand, DEFAULT_SETTINGS.loggingProcessCommand);
+    this.settings.loggingHttpEndpoint = normalizeStringSetting(this.settings.loggingHttpEndpoint, DEFAULT_SETTINGS.loggingHttpEndpoint);
+    this.settings.loggingHttpHeaders = normalizeStringSetting(this.settings.loggingHttpHeaders, DEFAULT_SETTINGS.loggingHttpHeaders);
+    if (!SUPPORTED_LOGGING_NOTE_PATH_MODES.has(this.settings.loggingNotePathMode)) {
+      this.settings.loggingNotePathMode = DEFAULT_SETTINGS.loggingNotePathMode;
+    }
+    this.settings.loggingMaxEventBytes = normalizePositiveInteger(this.settings.loggingMaxEventBytes, DEFAULT_SETTINGS.loggingMaxEventBytes);
     this.settings.defaultContainerGroup = isCompileFeatureAllowed("container-groups")
       ? normalizeStringSetting(this.settings.defaultContainerGroup, DEFAULT_SETTINGS.defaultContainerGroup)
       : "";
@@ -1847,6 +2017,29 @@ export default class loomPlugin extends Plugin {
       lines.splice(currentBlock.endLine + 1, 0, ...rendered);
       return lines.join("\n");
     });
+    await this.logEvent({
+      type: "loom.output.written",
+      message: "Wrote managed output to note",
+      notePath: file.path,
+      block,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      warning: result.warning,
+      data: {
+        destination: "note",
+        success: result.success,
+        exitCode: result.exitCode,
+      },
+    });
+    await this.logEvent({
+      type: "loom.note.modified",
+      message: "Inserted managed output section",
+      notePath: file.path,
+      block,
+      data: {
+        action: "output.written",
+      },
+    });
   }
 
   private async writeOutputFileIfRequested(file: TFile, block: loomCodeBlock, result: loomStoredOutput["result"]): Promise<void> {
@@ -1867,6 +2060,23 @@ export default class loomPlugin extends Plugin {
         ? `${current.replace(/\s*$/, "\n")}${rendered}`
         : rendered;
       await this.app.vault.adapter.write(target.path, next);
+      await this.logEvent({
+        type: "loom.output.file.written",
+        message: "Wrote Loom output file",
+        notePath: file.path,
+        block,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        warning: result.warning,
+        data: {
+          path: target.path,
+          mode: target.mode,
+          format: target.format,
+          streams: target.streams,
+          success: result.success,
+          exitCode: result.exitCode,
+        },
+      });
 
       const streamList = target.streams.join(",");
       const notice = `Wrote output file ${target.path} (${target.mode}, ${target.format}, ${streamList}).`;
