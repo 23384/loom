@@ -285,7 +285,7 @@ async function runExternalExtractor(
     });
     child.on("error", (error) => {
       clearTimeout(timeout);
-      reject(error);
+      reject(formatSpawnError(error, extractor.executable, "Custom source extractor"));
     });
     child.on("close", (code) => {
       clearTimeout(timeout);
@@ -708,7 +708,9 @@ async function runPythonAst<T>(source: string, mode: "module" | "usage", host: l
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      reject(formatSpawnError(error, executable, "Python AST helper"));
+    });
     child.on("close", (code) => {
       if (code !== 0) {
         reject(new Error((stderr || stdout || `Python AST helper exited with code ${code}.`).trim()));
@@ -732,6 +734,13 @@ function findLineRange(lines: string[], reference: lotusSourceReference): Source
     return null;
   }
   return { start, end };
+}
+
+function formatSpawnError(error: unknown, executable: string, label: string): Error {
+  if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+    return new Error(`${label} executable not found: ${executable}`);
+  }
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function findSymbolRange(lines: string[], language: lotusNormalizedLanguage, symbolName: string): SourceRange | null {

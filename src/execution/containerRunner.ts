@@ -1,7 +1,7 @@
 import type { App, TFile } from "obsidian";
-import { closeSync, existsSync, openSync } from "fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "fs/promises";
-import { basename, join, normalize as normalizeFsPath, posix as posixPath } from "path";
+import { closeSync, constants, existsSync, openSync } from "fs";
+import { access, mkdir, readFile, readdir, rm, writeFile } from "fs/promises";
+import { basename, delimiter, isAbsolute, join, normalize as normalizeFsPath, posix as posixPath } from "path";
 import { spawn } from "child_process";
 import { isCompileContainerGroupAllowed, isCompileContainerRuntimeAllowed, isCompileFeatureAllowed } from "../buildProfile";
 import { runProcess } from "./processRunner";
@@ -1216,6 +1216,7 @@ export class lotusContainerRunner {
     const logPath = manager.logFile ? this.resolveGroupFilePath(groupPath, manager.logFile) : null;
     const logFd = logPath ? openSync(logPath, "a") : null;
     try {
+      await this.assertExecutableAvailable(executable, `QEMU manager for ${groupName}`);
       const child = spawn(executable, args, {
         cwd: groupPath,
         detached: true,
@@ -1236,6 +1237,23 @@ export class lotusContainerRunner {
         closeSync(logFd);
       }
     }
+  }
+
+  private async assertExecutableAvailable(executable: string, label: string): Promise<void> {
+    const candidates = isAbsolute(executable) || executable.includes("/") || executable.includes("\\")
+      ? [executable]
+      : (process.env.PATH ?? "").split(delimiter).filter(Boolean).map((entry) => join(entry, executable));
+
+    for (const candidate of candidates) {
+      try {
+        await access(candidate, constants.X_OK);
+        return;
+      } catch {
+        continue;
+      }
+    }
+
+    throw new Error(`${label} executable not found: ${executable}`);
   }
 
   private buildManagedQemuArgs(groupPath: string, manager: lotusQemuManagerConfig): string[] {

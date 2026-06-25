@@ -314,6 +314,10 @@ export class lotusLogger {
       }
     });
     child.on("error", (error) => {
+      if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+        console.warn(`lotus logging process executable not found: ${executable}`);
+        return;
+      }
       console.warn("lotus logging process failed", error);
     });
     child.on("exit", () => {

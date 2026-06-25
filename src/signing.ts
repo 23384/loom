@@ -244,7 +244,9 @@ async function runSshKeygenProcess(args: string[], stdin: "ignore" | number, env
     child.stderr?.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      reject(formatSshKeygenSpawnError(error));
+    });
     child.on("close", (code) => {
       if (code === 0) {
         resolve(stdout);
@@ -257,6 +259,13 @@ async function runSshKeygenProcess(args: string[], stdin: "ignore" | number, env
 
 function derivePassphraseKey(passphrase: string, salt: Buffer, iterations: number): Buffer {
   return pbkdf2Sync(passphrase, salt, iterations, PASSPHRASE_KEY_BYTES, "sha256");
+}
+
+function formatSshKeygenSpawnError(error: unknown): Error {
+  if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+    return new Error("ssh-keygen executable not found. OpenSSH signing requires ssh-keygen in PATH.");
+  }
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function timingSafeBase64Equal(left: string, right: string): boolean {
