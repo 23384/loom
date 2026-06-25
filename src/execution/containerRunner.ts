@@ -1,7 +1,7 @@
 import type { App, TFile } from "obsidian";
-import { closeSync, existsSync, openSync } from "fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "fs/promises";
-import { basename, join, normalize as normalizeFsPath, posix as posixPath } from "path";
+import { closeSync, constants, existsSync, openSync } from "fs";
+import { access, mkdir, readFile, readdir, rm, writeFile } from "fs/promises";
+import { basename, delimiter, isAbsolute, join, normalize as normalizeFsPath, posix as posixPath } from "path";
 import { spawn } from "child_process";
 import { isCompileContainerGroupAllowed, isCompileContainerRuntimeAllowed, isCompileFeatureAllowed } from "../buildProfile";
 import { runProcess } from "./processRunner";
@@ -347,7 +347,7 @@ export class lotusContainerRunner {
       args: [
         "run",
         "--rm",
-        ...(context.stdin != null ? ["-i"] : []),
+        ...(context.stdin != null || context.stdinSession ? ["-i"] : []),
         "-v",
         `${groupPath}:${workspacePath}`,
         ...(useContextWorkingDirectory
@@ -361,6 +361,9 @@ export class lotusContainerRunner {
       timeoutMs: context.timeoutMs,
       signal: context.signal,
       stdin: context.stdin,
+      stdinSession: context.stdinSession,
+      onStdout: context.onStdout,
+      onStderr: context.onStderr,
     });
   }
 
@@ -453,6 +456,9 @@ export class lotusContainerRunner {
         context.timeoutMs,
         context.signal,
         context.stdin,
+        context.stdinSession,
+        context.onStdout,
+        context.onStderr,
         "run",
       );
       return result;
@@ -547,6 +553,9 @@ export class lotusContainerRunner {
       timeoutMs: context.timeoutMs,
       signal: context.signal,
       stdin: context.stdin,
+      stdinSession: context.stdinSession,
+      onStdout: context.onStdout,
+      onStderr: context.onStderr,
     });
   }
 
@@ -573,7 +582,7 @@ export class lotusContainerRunner {
     signal: AbortSignal,
   ): Promise<void> {
     const command = (remote.mkdirCommand || "mkdir -p {workspace}").replaceAll("{workspace}", shellQuote(remote.workspace));
-    const result = await this.runRemoteCommand(groupName, groupPath, runtimeId, `${runnerName} mkdir`, remote, command, timeoutMs, signal, undefined, "mkdir");
+    const result = await this.runRemoteCommand(groupName, groupPath, runtimeId, `${runnerName} mkdir`, remote, command, timeoutMs, signal, undefined, undefined, undefined, undefined, "mkdir");
     if (!result.success) {
       throw new Error(`${runnerName} workspace setup failed: ${result.stderr || result.stdout || `exit ${result.exitCode}`}`);
     }
@@ -591,7 +600,7 @@ export class lotusContainerRunner {
     if (!remote.healthCheck) {
       return;
     }
-    const result = await this.runRemoteCommand(groupName, groupPath, runtimeId, `${runnerName} remote health check`, remote, remote.healthCheck.command, timeoutMs, signal, undefined, "health");
+    const result = await this.runRemoteCommand(groupName, groupPath, runtimeId, `${runnerName} remote health check`, remote, remote.healthCheck.command, timeoutMs, signal, undefined, undefined, undefined, undefined, "health");
     const combinedOutput = `${result.stdout}\n${result.stderr}`;
     if (!result.success) {
       throw new Error(`${runnerName} remote health check failed: ${result.stderr || result.stdout || `exit ${result.exitCode}`}`);
@@ -645,7 +654,7 @@ export class lotusContainerRunner {
     signal: AbortSignal,
   ): Promise<lotusRunResult> {
     const command = (remote.cleanupCommand || "rm -f {file}").replaceAll("{file}", shellQuote(remoteFile));
-    return this.runRemoteCommand(groupName, groupPath, runtimeId, `${runnerName} cleanup`, remote, command, timeoutMs, signal, undefined, "cleanup");
+    return this.runRemoteCommand(groupName, groupPath, runtimeId, `${runnerName} cleanup`, remote, command, timeoutMs, signal, undefined, undefined, undefined, undefined, "cleanup");
   }
 
   private async runRemoteCommand(
@@ -658,6 +667,9 @@ export class lotusContainerRunner {
     timeoutMs: number,
     signal: AbortSignal,
     stdin: string | undefined,
+    stdinSession: lotusRunContext["stdinSession"] | undefined,
+    onStdout: lotusRunContext["onStdout"] | undefined,
+    onStderr: lotusRunContext["onStderr"] | undefined,
     action: string,
   ): Promise<lotusRunResult> {
     return runProcess({
@@ -673,6 +685,9 @@ export class lotusContainerRunner {
       timeoutMs,
       signal,
       stdin,
+      stdinSession,
+      onStdout,
+      onStderr,
       env: this.remoteProcessEnv(remote),
     });
   }
@@ -1201,6 +1216,7 @@ export class lotusContainerRunner {
     const logPath = manager.logFile ? this.resolveGroupFilePath(groupPath, manager.logFile) : null;
     const logFd = logPath ? openSync(logPath, "a") : null;
     try {
+      await this.assertExecutableAvailable(executable, `QEMU manager for ${groupName}`);
       const child = spawn(executable, args, {
         cwd: groupPath,
         detached: true,
@@ -1221,6 +1237,23 @@ export class lotusContainerRunner {
         closeSync(logFd);
       }
     }
+  }
+
+  private async assertExecutableAvailable(executable: string, label: string): Promise<void> {
+    const candidates = isAbsolute(executable) || executable.includes("/") || executable.includes("\\")
+      ? [executable]
+      : (process.env.PATH ?? "").split(delimiter).filter(Boolean).map((entry) => join(entry, executable));
+
+    for (const candidate of candidates) {
+      try {
+        await access(candidate, constants.X_OK);
+        return;
+      } catch {
+        continue;
+      }
+    }
+
+    throw new Error(`${label} executable not found: ${executable}`);
   }
 
   private buildManagedQemuArgs(groupPath: string, manager: lotusQemuManagerConfig): string[] {

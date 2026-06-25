@@ -1,15 +1,18 @@
-import { access, mkdir, readFile as fsReadFile, readdir, writeFile } from "fs/promises";
+import { access, mkdir, mkdtemp, readFile as fsReadFile, readdir, rm, writeFile } from "fs/promises";
 import { constants } from "fs";
 import { delimiter } from "path";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "path";
 import { pathToFileURL } from "url";
 import { spawn } from "child_process";
+import { generateKeyPairSync } from "crypto";
+import { tmpdir } from "os";
 import { DEFAULT_SETTINGS } from "../src/defaultSettings";
 import { normalizeLanguageConfiguration } from "../src/languagePackages";
 import { getLanguageCapability } from "../src/languageCapabilities";
 import { parseMarkdownCodeBlocks } from "../src/parser";
 import { resolveReferencedSource } from "../src/sourceExtract";
 import { buildSourceReferenceHarness } from "../src/sourceHarness";
+import { createOpenSshSignature, createPassphraseSignature, createRsaSignature, readSignatureRecord, verifyOpenSshSignature, verifyPassphraseSignature, verifyRsaSignature } from "../src/signing";
 import { PythonRunner } from "../src/runners/python";
 import { NodeRunner } from "../src/runners/node";
 import { OcamlRunner } from "../src/runners/ocaml";
@@ -87,6 +90,7 @@ for (const note of notes) {
     results.push(await runBlock(note, block));
   }
 }
+results.push(...await runSigningSmoke());
 
 await mkdir(artifactDir, { recursive: true });
 await writeFile(join(artifactDir, "report.json"), JSON.stringify({
@@ -183,6 +187,128 @@ async function runBlock(note: NoteFile, block: lotusCodeBlock): Promise<SmokeBlo
   }
 
   return classifyResult(note, executableBlock, name, directives, runner.displayName, result, sourcePreview);
+}
+
+async function runSigningSmoke(): Promise<SmokeBlockResult[]> {
+  if (profile !== "minimal" && profile !== "full") {
+    return [];
+  }
+
+  const payload = JSON.stringify({
+    version: 1,
+    noteHash: "c0ffee",
+    policy: { preset: "strict" },
+    blocks: [{ id: "smoke", language: "python", hash: "deadbeef" }],
+  });
+
+  return [
+    await runSyntheticSmoke("signing-passphrase", async () => {
+      const signature = createPassphraseSignature(payload, "lotus smoke passphrase", "smoke");
+      if (!verifyPassphraseSignature(signature, payload, "lotus smoke passphrase")) {
+        throw new Error("passphrase signature did not verify");
+      }
+      if (verifyPassphraseSignature(signature, `${payload}!`, "lotus smoke passphrase")) {
+        throw new Error("passphrase signature verified a modified payload");
+      }
+      if (!readSignatureRecord(JSON.parse(JSON.stringify(signature)))) {
+        throw new Error("passphrase signature record did not parse");
+      }
+    }),
+    await runSyntheticSmoke("signing-rsa-pss", async () => {
+      const { privateKey, publicKey } = generateKeyPairSync("rsa", {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: "spki", format: "pem" },
+        privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      });
+      const signature = createRsaSignature(payload, privateKey, undefined, "smoke");
+      if (!verifyRsaSignature(signature, payload, publicKey)) {
+        throw new Error("RSA-PSS signature did not verify");
+      }
+      if (verifyRsaSignature(signature, `${payload}!`, publicKey)) {
+        throw new Error("RSA-PSS signature verified a modified payload");
+      }
+      if (!readSignatureRecord(JSON.parse(JSON.stringify(signature)))) {
+        throw new Error("RSA-PSS signature record did not parse");
+      }
+    }),
+    await runSyntheticSmoke("signing-openssh-sshsig", async () => {
+      const sshKeygen = await findExecutable(["ssh-keygen"]);
+      if (!sshKeygen) {
+        return { skipped: true, reason: "ssh-keygen not available" };
+      }
+
+      const tempDir = await mkdtemp(join(tmpdir(), "lotus-smoke-sshsig-"));
+      try {
+        const keyPath = join(tempDir, "id_ed25519");
+        const keygenExit = await runCommand(sshKeygen, ["-q", "-t", "ed25519", "-N", "", "-C", "lotus-smoke", "-f", keyPath]);
+        if (keygenExit !== 0) {
+          throw new Error("ssh-keygen failed to create a smoke signing key");
+        }
+
+        const namespace = "lotus-smoke@example.local";
+        const signer = "lotus-smoke";
+        const publicKey = await fsReadFile(`${keyPath}.pub`, "utf8");
+        const signature = await createOpenSshSignature(payload, keyPath, namespace, signer, "ssh:smoke");
+        const allowedSigners = `${signer} namespaces="${namespace}" ${publicKey}`;
+        if (!await verifyOpenSshSignature(signature, payload, allowedSigners)) {
+          throw new Error("OpenSSH SSHSIG signature did not verify");
+        }
+        if (await verifyOpenSshSignature(signature, `${payload}!`, allowedSigners)) {
+          throw new Error("OpenSSH SSHSIG signature verified a modified payload");
+        }
+        if (!readSignatureRecord(JSON.parse(JSON.stringify(signature)))) {
+          throw new Error("OpenSSH SSHSIG signature record did not parse");
+        }
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    }),
+  ];
+}
+
+async function runSyntheticSmoke(
+  name: string,
+  callback: () => Promise<void | { skipped: true; reason: string }>,
+): Promise<SmokeBlockResult> {
+  const started = Date.now();
+  try {
+    const result = await callback();
+    if (result?.skipped) {
+      return {
+        profile,
+        note: "(synthetic)",
+        ordinal: 0,
+        language: "signing",
+        status: "skipped",
+        name,
+        runnerName: "Signing smoke",
+        durationMs: Date.now() - started,
+        reason: result.reason,
+      };
+    }
+    return {
+      profile,
+      note: "(synthetic)",
+      ordinal: 0,
+      language: "signing",
+      status: "passed",
+      name,
+      runnerName: "Signing smoke",
+      durationMs: Date.now() - started,
+    };
+  } catch (error) {
+    return {
+      profile,
+      note: "(synthetic)",
+      ordinal: 0,
+      language: "signing",
+      status: "failed",
+      name,
+      runnerName: "Signing smoke",
+      durationMs: Date.now() - started,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function classifyResult(
