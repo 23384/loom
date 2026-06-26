@@ -40,7 +40,7 @@ export class ObsidianContextRunner implements lotusRunner {
     let exitCode: number | null = 0;
     let timedOut = false;
     let cancelled = false;
-    let timeoutHandle: NodeJS.Timeout | null = null;
+    let timeoutHandle: any = null;
     let abortHandler: (() => void) | null = null;
 
     try {
@@ -70,7 +70,7 @@ export class ObsidianContextRunner implements lotusRunner {
       ));
 
       const timeout = new Promise<never>((_resolve, reject) => {
-        timeoutHandle = setTimeout(() => {
+        timeoutHandle = window.setTimeout(() => {
           timedOut = true;
           reject(new Error(`Execution timed out after ${context.timeoutMs} ms. Obsidian-context JavaScript cannot be force-killed once started.`));
         }, context.timeoutMs);
@@ -97,7 +97,7 @@ export class ObsidianContextRunner implements lotusRunner {
       stderr.push(formatError(error));
     } finally {
       if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
+        window.clearTimeout(timeoutHandle);
       }
       if (abortHandler) {
         context.signal.removeEventListener("abort", abortHandler);

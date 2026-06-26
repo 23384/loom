@@ -270,7 +270,7 @@ async function runExternalExtractor(
     });
     let stdout = "";
     let stderr = "";
-    const timeout = setTimeout(() => {
+    const timeout = window.setTimeout(() => {
       child.kill("SIGTERM");
       reject(new Error(`Custom source extractor timed out after ${extractor.timeoutMs} ms.`));
     }, extractor.timeoutMs);
@@ -284,11 +284,11 @@ async function runExternalExtractor(
       stderr += chunk;
     });
     child.on("error", (error) => {
-      clearTimeout(timeout);
+      window.clearTimeout(timeout);
       reject(formatSpawnError(error, extractor.executable, "Custom source extractor"));
     });
     child.on("close", (code) => {
-      clearTimeout(timeout);
+      window.clearTimeout(timeout);
       if (code !== 0) {
         reject(new Error((stderr || stdout || `Custom source extractor exited with code ${code}.`).trim()));
         return;
@@ -850,7 +850,7 @@ function collectDefinitions(lines: string[], language: lotusNormalizedLanguage):
     case "ocaml":
       return collectOcamlDefinitions(lines);
     case "java":
-      return collectBraceDefinitions(lines, /^\s*(?:public|private|protected|static|final|abstract|\s)*\s*(?:class|interface|enum|record)\s+([A-Za-z_]\w*)\b|^\s*(?:public|private|protected|static|final|synchronized|native|\s)+[\w<>\[\],.?]+\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*\{/);
+      return collectBraceDefinitions(lines, /^\s*(?:public|private|protected|static|final|abstract|\s)*\s*(?:class|interface|enum|record)\s+([A-Za-z_]\w*)\b|^\s*(?:public|private|protected|static|final|synchronized|native|\s)+[\w<>[\],.?]+\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*\{/);
     case "llvm-ir":
       return collectLlvmDefinitions(lines);
     default:

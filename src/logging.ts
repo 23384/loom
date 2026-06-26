@@ -234,7 +234,7 @@ export class lotusLogger {
   }
 
   private async appendVaultText(rawPath: string, content: string): Promise<void> {
-    const path = normalizeVaultLogPath(rawPath);
+    const path = normalizeVaultLogPath(this.app.vault.configDir, rawPath);
     if (!path) {
       return;
     }
@@ -358,7 +358,7 @@ function renderTextLogLine(event: lotusLogEvent): string {
   return `${event.timestamp} ${event.type}${machine}${note}${noteContent}${block}${target}${success}${exit}${duration}${message}`;
 }
 
-function normalizeVaultLogPath(rawPath: string): string | null {
+function normalizeVaultLogPath(configDir: string, rawPath: string): string | null {
   const trimmed = rawPath.trim();
   if (!trimmed || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
     return null;
@@ -366,7 +366,7 @@ function normalizeVaultLogPath(rawPath: string): string | null {
 
   const path = normalizePath(trimmed.startsWith("/") ? trimmed.slice(1) : trimmed);
   const parts = path.split("/").filter(Boolean);
-  if (!parts.length || parts.includes("..") || path === ".obsidian" || path.startsWith(".obsidian/") || path === ".git" || path.startsWith(".git/")) {
+  if (!parts.length || parts.includes("..") || path === configDir || path.startsWith(`${configDir}/`) || path === ".git" || path.startsWith(".git/")) {
     return null;
   }
   return path;

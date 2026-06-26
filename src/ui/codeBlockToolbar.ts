@@ -19,7 +19,7 @@ export function createCodeBlockToolbar(
   handlers: lotusToolbarHandlers,
   options: lotusToolbarOptions = {},
 ): HTMLDivElement {
-  const toolbar = document.createElement("div");
+  const toolbar = activeDocument.createElement("div");
   toolbar.className = "lotus-code-toolbar";
   toolbar.dataset.lotusBlockId = blockId;
 
@@ -34,7 +34,7 @@ export function createCodeBlockToolbar(
 }
 
 function createButton(label: string, iconName: string, onClick: () => void, spinning: boolean): HTMLButtonElement {
-  const button = document.createElement("button");
+  const button = activeDocument.createElement("button");
   button.className = `lotus-toolbar-button${spinning ? " is-running" : ""}`;
   button.type = "button";
   button.setAttribute("aria-label", label);

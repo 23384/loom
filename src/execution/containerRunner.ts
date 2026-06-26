@@ -1839,9 +1839,9 @@ async function sleepWithSignal(durationMs: number, signal: AbortSignal): Promise
   }
 
   await new Promise<void>((resolve) => {
-    const timeout = setTimeout(resolve, durationMs);
+    const timeout = window.setTimeout(resolve, durationMs);
     const abort = () => {
-      clearTimeout(timeout);
+      window.clearTimeout(timeout);
       resolve();
     };
     signal.addEventListener("abort", abort, { once: true });
