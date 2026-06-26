@@ -23,7 +23,7 @@ function getStatusKind(output: lotusStoredOutput): "success" | "warning" | "fail
 }
 
 export function createOutputPanel(output: lotusStoredOutput, options: lotusOutputPanelOptions): HTMLDivElement {
-  const panel = document.createElement("div");
+  const panel = activeDocument.createElement("div");
   panel.className = `lotus-output-panel is-${getStatusKind(output)}${output.visible ? "" : " is-hidden"}`;
   panel.dataset.lotusBlockId = output.blockId;
   renderOutputPanel(panel, output, options);
@@ -126,7 +126,7 @@ function formatStreamLabel(label: string, lineCount: number, visibleLines: numbe
 }
 
 export function createRunningPanel(options: lotusRunningPanelOptions = {}): HTMLDivElement {
-  const panel = document.createElement("div");
+  const panel = activeDocument.createElement("div");
   panel.className = "lotus-output-panel is-running";
 
   const header = panel.createDiv({ cls: "lotus-output-header" });
@@ -158,7 +158,7 @@ function createLiveInput(container: HTMLElement, options: lotusRunningPanelOptio
     cls: "lotus-live-input-field",
     attr: {
       rows: "2",
-      placeholder: "stdin for the running process",
+      placeholder: "Stdin for the running process",
     },
   });
   const actions = form.createDiv({ cls: "lotus-live-input-actions" });

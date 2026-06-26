@@ -35,7 +35,7 @@ export class lotusLogView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Lotus Logs";
+    return "Lotus logs";
   }
 
   getIcon(): string {
@@ -52,13 +52,13 @@ export class lotusLogView extends ItemView {
     container.addClass("lotus-log-view");
 
     const header = container.createDiv({ cls: "lotus-log-view-header" });
-    header.createEl("h2", { text: "Lotus Logs" });
+    header.createEl("h2", { text: "Lotus logs" });
     const actions = header.createDiv({ cls: "lotus-log-view-actions" });
     const refreshButton = actions.createEl("button", { attr: { "aria-label": "Refresh logs" } });
     setIcon(refreshButton, "refresh-cw");
     refreshButton.addEventListener("click", () => void this.refresh());
 
-    const path = normalizeLogPath(this.plugin.settings.loggingViewerJsonlPath || this.plugin.settings.loggingGlobalJsonlPath);
+    const path = normalizeLogPath(this.plugin.app.vault.configDir, this.plugin.settings.loggingViewerJsonlPath || this.plugin.settings.loggingGlobalJsonlPath);
     container.createDiv({ cls: "lotus-log-view-path", text: path || "No JSONL log path configured." });
 
     this.events = path ? await this.readEvents(path) : [];
@@ -243,14 +243,14 @@ function formatTimestamp(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-function normalizeLogPath(rawPath: string): string | null {
+function normalizeLogPath(configDir: string, rawPath: string): string | null {
   const trimmed = rawPath.trim();
   if (!trimmed || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
     return null;
   }
   const path = normalizePath(trimmed.startsWith("/") ? trimmed.slice(1) : trimmed);
   const parts = path.split("/").filter(Boolean);
-  if (!parts.length || parts.includes("..") || path === ".obsidian" || path.startsWith(".obsidian/") || path === ".git" || path.startsWith(".git/")) {
+  if (!parts.length || parts.includes("..") || path === configDir || path.startsWith(`${configDir}/`) || path === ".git" || path.startsWith(".git/")) {
     return null;
   }
   return path;

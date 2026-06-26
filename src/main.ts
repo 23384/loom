@@ -203,7 +203,7 @@ class ExecutionConsentModal extends Modal {
     contentEl.empty();
     contentEl.createEl("h2", { text: "Enable lotus local execution?" });
     contentEl.createEl("p", {
-      text: "lotus runs code from your notes on your local machine using the configured executables. It does not sandbox or isolate the process.",
+      text: "Lotus runs code from your notes on your local machine using the configured executables. It does not sandbox or isolate the process.",
     });
 
     const actions = contentEl.createDiv({ cls: "lotus-modal-actions" });
@@ -234,7 +234,7 @@ class ReproducibilityPolicyModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h2", { text: "Lotus Reproducibility Policy" });
+    contentEl.createEl("h2", { text: "Lotus reproducibility policy" });
     contentEl.createEl("p", {
       text: "Choose what may change without invalidating a saved reproducibility snapshot.",
     });
@@ -352,14 +352,14 @@ class SignatureMaterialModal extends Modal {
         cls: "lotus-signing-key-input",
         attr: {
           rows: "8",
-          placeholder: "-----BEGIN PRIVATE KEY-----",
+          placeholder: "-----begin private key-----",
         },
       });
     const keyPassphrase = createPasswordInput(contentEl, "Private key passphrase, if encrypted");
     const error = contentEl.createDiv({ cls: "setting-item-description" });
     this.renderActions(contentEl, () => {
       if (privateKey && !privateKey.value.trim()) {
-        error.setText("Private key PEM is required unless a private key file is configured.");
+        error.setText("Private key pem is required unless a private key file is configured.");
         return;
       }
       this.submit({
@@ -452,7 +452,7 @@ class lotusToolbarRenderChild extends MarkdownRenderChild {
     if (this.plugin.settings.pdfExportMode === "code") {
       hostClasses.push("lotus-print-hide-output");
     }
-    this.panelContainer = document.createElement("div");
+    this.panelContainer = activeDocument.createElement("div");
     this.panelContainer.className = hostClasses.join(" ");
     this.codeElement.insertAdjacentElement("afterend", this.panelContainer);
 
@@ -504,7 +504,7 @@ class lotusOutputWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    const wrapper = document.createElement("div");
+    const wrapper = activeDocument.createElement("div");
     wrapper.className = "lotus-inline-output-host";
     this.plugin.renderOutputInto(this.block, wrapper);
     return wrapper;
@@ -527,7 +527,7 @@ export default class lotusPlugin extends Plugin {
     new CustomLanguageRunner(),
   ]);
   // Exposed as public and readonly so the settings panel and modals can access container configurations and default language mapping helpers.
-  public readonly containerRunner = new lotusContainerRunner(this.app, this.manifest.dir ?? ".obsidian/plugins/lotus");
+  public readonly containerRunner = new lotusContainerRunner(this.app, this.manifest.dir ?? `${this.app.vault.configDir}/plugins/lotus`);
   private hasRegisteredMarkdownDecorator = false;
   private readonly outputs = new Map<string, lotusStoredOutput>();
   private readonly liveRuns = new Map<string, lotusLiveRunState>();
@@ -547,7 +547,7 @@ export default class lotusPlugin extends Plugin {
     this.statusBarItemEl = this.addStatusBarItem();
     this.updateStatusBar();
     this.registerView(LOTUS_LOG_VIEW_TYPE, (leaf) => new lotusLogView(leaf, this));
-    this.addRibbonIcon("list-filter", "Open Lotus logs", () => {
+    this.addRibbonIcon("list-filter", "Open lotus logs", () => {
       void this.openLogView();
     });
     this.app.workspace.onLayoutReady(() => {
@@ -557,7 +557,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "run-current-code-block",
-      name: "lotus: Run Current Code Block",
+      name: "Run current code block",
       editorCallback: async (editor, view) => {
         const file = view.file;
         if (!file) {
@@ -567,7 +567,7 @@ export default class lotusPlugin extends Plugin {
         const blocks = parseMarkdownCodeBlocks(file.path, editor.getValue(), this.settings);
         const block = findBlockAtLine(blocks, editor.getCursor().line);
         if (!block) {
-          new Notice("No supported lotus block at the current cursor.");
+          new Notice("No supported lotus block at the current Cursor.");
           return;
         }
         await this.runBlock(file, block);
@@ -576,7 +576,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "run-all-code-blocks",
-      name: "lotus: Run All Supported Code Blocks in Current Note",
+      name: "Run all supported code blocks in current note",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -591,7 +591,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "cancel-current-code-block",
-      name: "lotus: Cancel Current Code Block Run",
+      name: "Cancel current code block run",
       editorCheckCallback: (checking, editor, view) => {
         const file = view.file;
         if (!file) {
@@ -611,7 +611,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "cancel-all-code-blocks",
-      name: "lotus: Cancel All Running Code Blocks",
+      name: "Cancel all running code blocks",
       checkCallback: (checking) => {
         if (!this.running.size) {
           return false;
@@ -625,7 +625,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "open-log-viewer",
-      name: "lotus: Open Log Viewer",
+      name: "Open log viewer",
       callback: () => {
         void this.openLogView();
       },
@@ -633,7 +633,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "clear-note-outputs",
-      name: "lotus: Clear Lotus Outputs in Current Note",
+      name: "Clear outputs in current note",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -648,7 +648,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "save-reproducibility-snapshot",
-      name: "lotus: Save Reproducibility Snapshot",
+      name: "Save reproducibility snapshot",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -663,7 +663,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "verify-reproducibility-snapshot",
-      name: "lotus: Verify Reproducibility Snapshot",
+      name: "Verify reproducibility snapshot",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -678,7 +678,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "set-reproducibility-policy",
-      name: "lotus: Set Reproducibility Policy",
+      name: "Set reproducibility policy",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -693,7 +693,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "copy-reproducibility-snapshot",
-      name: "lotus: Copy Reproducibility Snapshot",
+      name: "Copy reproducibility snapshot",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -709,7 +709,7 @@ export default class lotusPlugin extends Plugin {
     if (isCompileFeatureAllowed("signing")) {
       this.addCommand({
         id: "sign-current-note",
-        name: "lotus: Sign Current Note",
+        name: "Sign current note",
         checkCallback: (checking) => {
           const file = this.getActiveMarkdownFile();
           if (!file) {
@@ -724,7 +724,7 @@ export default class lotusPlugin extends Plugin {
 
       this.addCommand({
         id: "verify-current-note-signature",
-        name: "lotus: Verify Current Note Signature",
+        name: "Verify current note signature",
         checkCallback: (checking) => {
           const file = this.getActiveMarkdownFile();
           if (!file) {
@@ -739,7 +739,7 @@ export default class lotusPlugin extends Plugin {
 
       this.addCommand({
         id: "copy-current-note-signature",
-        name: "lotus: Copy Current Note Signature",
+        name: "Copy current note signature",
         checkCallback: (checking) => {
           const file = this.getActiveMarkdownFile();
           if (!file) {
@@ -754,7 +754,7 @@ export default class lotusPlugin extends Plugin {
 
       this.addCommand({
         id: "sign-all-notes",
-        name: "lotus: Sign All Notes",
+        name: "Sign all notes",
         callback: () => {
           void this.signAllNotes();
         },
@@ -762,7 +762,7 @@ export default class lotusPlugin extends Plugin {
 
       this.addCommand({
         id: "verify-all-note-signatures",
-        name: "lotus: Verify All Note Signatures",
+        name: "Verify all note signatures",
         callback: () => {
           void this.verifyAllNoteSignatures();
         },
@@ -772,7 +772,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "copy-note-hash",
-      name: "lotus: Copy Note Hash",
+      name: "Copy note hash",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -787,7 +787,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "copy-verification-report",
-      name: "lotus: Copy Reproducibility Verification Report",
+      name: "Copy reproducibility verification report",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -802,7 +802,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "hash-current-note",
-      name: "lotus: Hash Current Note",
+      name: "Hash current note",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -817,7 +817,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "verify-current-note-hash",
-      name: "lotus: Verify Current Note Hash",
+      name: "Verify current note hash",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -832,7 +832,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "hash-current-code-block",
-      name: "lotus: Hash Current Code Block",
+      name: "Hash current code block",
       checkCallback: (checking) => {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view?.file) {
@@ -847,7 +847,7 @@ export default class lotusPlugin extends Plugin {
 
     this.addCommand({
       id: "verify-code-block-hashes",
-      name: "lotus: Verify Code Block Hashes in Current Note",
+      name: "Verify code block hashes in current note",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -878,7 +878,7 @@ export default class lotusPlugin extends Plugin {
     if (isCompileFeatureAllowed("container-groups")) {
       this.addCommand({
         id: "validate-container-groups",
-        name: "lotus: Validate Container Groups",
+        name: "Validate container groups",
         callback: async () => {
           const groups = await this.getContainerGroupSummaries();
           new Notice(groups.length ? groups.map((group) => `${group.name}: ${group.status}`).join("\n") : "No lotus container groups found.", 8000);
@@ -926,7 +926,7 @@ export default class lotusPlugin extends Plugin {
   }
 
   async loadExternalLanguagePacks(showNotice = false): Promise<void> {
-    const packDir = normalizePath(`${this.manifest.dir ?? ".obsidian/plugins/lotus"}/${EXTERNAL_LANGUAGE_PACK_DIR}`);
+    const packDir = normalizePath(`${this.manifest.dir ?? `${this.app.vault.configDir}/plugins/lotus`}/${EXTERNAL_LANGUAGE_PACK_DIR}`);
     const adapter = this.app.vault.adapter;
     const packs: lotusExternalLanguagePack[] = [];
     let failures = 0;
@@ -995,7 +995,7 @@ export default class lotusPlugin extends Plugin {
     }
 
     const adapter = this.app.vault.adapter;
-    const packDir = normalizePath(`${this.manifest.dir ?? ".obsidian/plugins/lotus"}/${EXTERNAL_LANGUAGE_PACK_DIR}`);
+    const packDir = normalizePath(`${this.manifest.dir ?? `${this.app.vault.configDir}/plugins/lotus`}/${EXTERNAL_LANGUAGE_PACK_DIR}`);
     const bundleDir = normalizePath(`${packDir}/${packId}`);
     await this.ensureVaultFolder(bundleDir);
 
@@ -1048,12 +1048,12 @@ export default class lotusPlugin extends Plugin {
     const existing = this.app.workspace.getLeavesOfType(LOTUS_LOG_VIEW_TYPE)[0];
     const leaf = existing ?? this.app.workspace.getRightLeaf(false);
     if (!leaf) {
-      new Notice("Unable to open Lotus log viewer.");
+      new Notice("Unable to open lotus log viewer.");
       return;
     }
 
     await leaf.setViewState({ type: LOTUS_LOG_VIEW_TYPE, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
     const view = leaf.view;
     if (view instanceof lotusLogView) {
       await view.refresh();
@@ -1272,7 +1272,7 @@ export default class lotusPlugin extends Plugin {
     });
     this.notifyOutputChanged(blockId);
     this.updateStatusBar();
-    new Notice("lotus cancellation requested.");
+    new Notice("Lotus cancellation requested.");
   }
 
   async cancelAllRuns(): Promise<void> {
@@ -1340,7 +1340,7 @@ export default class lotusPlugin extends Plugin {
 
     this.notifyOutputChanged(blockId);
     this.updateStatusBar();
-    new Notice("lotus snippet removed.");
+    new Notice("Lotus snippet removed.");
   }
 
   async runAllBlocksInFile(file: TFile): Promise<void> {
@@ -1378,7 +1378,7 @@ export default class lotusPlugin extends Plugin {
         blocks: blocks.length,
       },
     });
-    new Notice("lotus outputs cleared.");
+    new Notice("Lotus outputs cleared.");
   }
 
   async saveReproducibilitySnapshot(file: TFile): Promise<void> {
@@ -1459,7 +1459,7 @@ export default class lotusPlugin extends Plugin {
       const source = await this.app.vault.cachedRead(file);
       const signature = readStoredSignature(source);
       if (!signature) {
-        new Notice("No lotus-signature found. Run lotus: Sign Current Note first.");
+        new Notice("No lotus-signature found. Run lotus: Sign current note first.");
         return;
       }
 
@@ -1480,7 +1480,7 @@ export default class lotusPlugin extends Plugin {
   async copyCurrentNoteSignature(file: TFile): Promise<void> {
     const signature = readStoredSignature(await this.app.vault.cachedRead(file));
     if (!signature) {
-      new Notice("No valid lotus-signature found. Run lotus: Sign Current Note first.");
+      new Notice("No valid lotus-signature found. Run lotus: Sign current note first.");
       return;
     }
     await this.copyTextToClipboard(JSON.stringify(signature, null, 2), "Note signature copied.");
@@ -1912,13 +1912,13 @@ export default class lotusPlugin extends Plugin {
     const source = await this.app.vault.cachedRead(file);
     const storedHash = readStoredNoteHash(source);
     if (!storedHash) {
-      new Notice("No lotus-note-hash found. Run lotus: Hash Current Note first.");
+      new Notice("No lotus-note-hash found. Run lotus: Hash current note first.");
       return;
     }
 
     const currentHash = sha256Hash(canonicalizeNoteForHash(source));
     if (storedHash === currentHash) {
-      new Notice("lotus note hash verified.");
+      new Notice("Lotus note hash verified.");
       return;
     }
 
@@ -1938,7 +1938,7 @@ export default class lotusPlugin extends Plugin {
     const blocks = parseMarkdownCodeBlocks(file.path, source, this.settings);
     const block = findBlockAtLine(blocks, editor.getCursor().line);
     if (!block) {
-      new Notice("No supported lotus block at the current cursor.");
+      new Notice("No supported lotus block at the current Cursor.");
       return;
     }
 
@@ -1962,7 +1962,7 @@ export default class lotusPlugin extends Plugin {
     const source = await this.app.vault.cachedRead(file);
     const storedEntries = readStoredCodeBlockHashEntries(source);
     if (!storedEntries.length) {
-      new Notice("No lotus-code-block-hashes found. Run lotus: Hash Current Code Block first.");
+      new Notice("No lotus-code-block-hashes found. Run lotus: Hash current code block first.");
       return;
     }
 
@@ -2455,7 +2455,7 @@ export default class lotusPlugin extends Plugin {
 
   async buildContainerGroup(name: string): Promise<void> {
     if (!isCompileFeatureAllowed("container-groups")) {
-      new Notice("lotus container groups are not included in this build.");
+      new Notice("Lotus container groups are not included in this build.");
       return;
     }
     if (!isCompileContainerGroupAllowed(name)) {
@@ -3023,7 +3023,8 @@ export default class lotusPlugin extends Plugin {
       ? normalizePath(trimmed.slice(1))
       : normalizePath(dirname(file.path) === "." ? trimmed : `${dirname(file.path)}/${trimmed}`);
     const parts = path.split("/").filter(Boolean);
-    if (!parts.length || parts.includes("..") || path.startsWith(".obsidian/") || path === ".obsidian" || path.startsWith(".git/") || path === ".git") {
+    const configDir = this.app.vault.configDir;
+    if (!parts.length || parts.includes("..") || path.startsWith(`${configDir}/`) || path === configDir || path.startsWith(".git/") || path === ".git") {
       throw new Error(`Invalid lotus-output-file path: ${rawPath}`);
     }
     return path;
@@ -3164,7 +3165,7 @@ export default class lotusPlugin extends Plugin {
   }
 
   private createStdinPanel(block: lotusCodeBlock): HTMLElement {
-    const panel = document.createElement("div");
+    const panel = activeDocument.createElement("div");
     panel.className = "lotus-stdin-panel";
     const isFunctionInput = this.isFunctionInputBlock(block);
 
@@ -3359,7 +3360,7 @@ function readTarBundle(bytes: Uint8Array): lotusArchiveEntry[] {
 }
 
 async function gunzipBytes(bytes: Uint8Array): Promise<ArrayBuffer> {
-  const Decompression = globalThis.DecompressionStream;
+  const Decompression = typeof DecompressionStream === "undefined" ? undefined : DecompressionStream;
   if (!Decompression) {
     throw new Error("This Obsidian runtime cannot decompress tar.gz bundles. Use .zip or .tar instead.");
   }
@@ -3579,7 +3580,7 @@ function normalizeMachineId(value: unknown): string {
 }
 
 function createMachineId(): string {
-  const cryptoApi = globalThis.crypto as { randomUUID?: () => string } | undefined;
+  const cryptoApi = typeof crypto === "undefined" ? undefined : crypto as { randomUUID?: () => string };
   return cryptoApi?.randomUUID?.() ?? `lotus-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
 }
 
@@ -3837,7 +3838,7 @@ function getRenderedCodeElements(root: HTMLElement): HTMLElement[] {
     }
   }
 
-  elements.push(...Array.from(root.querySelectorAll("pre > code")) as HTMLElement[]);
+  elements.push(...Array.from(root.querySelectorAll<HTMLElement>("pre > code")));
   return [...new Set(elements)];
 }
 

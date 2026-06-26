@@ -40,7 +40,7 @@ export class ObsidianContextRunner implements lotusRunner {
     let exitCode: number | null = 0;
     let timedOut = false;
     let cancelled = false;
-    let timeoutHandle: NodeJS.Timeout | null = null;
+    let timeoutHandle: any = null;
     let abortHandler: (() => void) | null = null;
 
     try {

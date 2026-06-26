@@ -103,8 +103,8 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
   let cancelled = false;
   let child: ReturnType<typeof spawn> | null = null;
   let childExited = false;
-  let timeoutHandle: NodeJS.Timeout | null = null;
-  let killHandle: NodeJS.Timeout | null = null;
+  let timeoutHandle: any = null;
+  let killHandle: any = null;
   let abortHandler: (() => void) | null = null;
   let detachStdinSession: (() => void) | undefined;
 

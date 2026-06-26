@@ -16,6 +16,8 @@ import type { lotusCustomLanguage, lotusPluginSettings } from "./types";
 
 export { DEFAULT_SETTINGS } from "./defaultSettings";
 
+type lotusCustomLanguageTextKey = Exclude<keyof lotusCustomLanguage, "extractorMode">;
+
 export class lotusSettingTab extends PluginSettingTab {
   constructor(private readonly lotusPlugin: lotusPlugin) {
     super(lotusPlugin.app, lotusPlugin);
@@ -484,7 +486,7 @@ export class lotusSettingTab extends PluginSettingTab {
       this.addTextSetting(containerEl, "eBPF object inspector", "Command or path for llvm-objdump. Leave empty to skip object section inspection.", "ebpfLlvmObjdumpExecutable");
       this.addTextSetting(containerEl, "eBPF include paths", "Comma-separated include directories passed to clang with -I.", "ebpfIncludePaths");
       new Setting(containerEl)
-        .setName("Allow eBPF kernel load")
+        .setName("Allow ebpf kernel load")
         .setDesc("Required before any block can use lotus-ebpf-mode=load. Compile-only mode stays available without this.")
         .addToggle((toggle) =>
           toggle.setValue(this.lotusPlugin.settings.ebpfAllowKernelLoad).onChange(async (value) => {
@@ -601,7 +603,7 @@ export class lotusSettingTab extends PluginSettingTab {
     if (isCompileCustomLanguagesAllowed()) {
       new Setting(containerEl)
         .setName("Custom languages")
-        .setDesc("Enable user-defined languages from the Custom Languages section.")
+        .setDesc("Enable user-defined languages from the custom languages section.")
         .addToggle((toggle) =>
           toggle.setValue(this.lotusPlugin.settings.enabledLanguagePacks.includes(CUSTOM_LANGUAGE_PACKAGE_ID)).onChange(async (value) => {
             this.setEnabledValue(this.lotusPlugin.settings.enabledLanguagePacks, CUSTOM_LANGUAGE_PACKAGE_ID, value);
@@ -834,7 +836,7 @@ export class lotusSettingTab extends PluginSettingTab {
       );
   }
 
-  private addCustomLanguageTextSetting<K extends keyof lotusCustomLanguage>(
+  private addCustomLanguageTextSetting<K extends lotusCustomLanguageTextKey>(
     containerEl: HTMLElement,
     language: lotusCustomLanguage,
     name: string,
@@ -846,7 +848,7 @@ export class lotusSettingTab extends PluginSettingTab {
       .setDesc(description)
       .addText((text) =>
         text.setValue(String(language[key] ?? "")).onChange(async (value) => {
-          (language[key] as string | undefined) = value.trim();
+          language[key] = value.trim();
           await this.lotusPlugin.saveSettings();
         }),
       );
@@ -854,7 +856,7 @@ export class lotusSettingTab extends PluginSettingTab {
 }
 
 export function showExecutionDisabledNotice(): void {
-  new Notice("lotus local execution is disabled. Enable it in settings or confirm the execution warning first.");
+  new Notice("Lotus local execution is disabled. Enable it in settings or confirm the execution warning first.");
 }
 
 class ContainerGroupNameModal extends Modal {
@@ -986,7 +988,7 @@ class EditContainerGroupModal extends Modal {
       try {
         this.configObj = JSON.parse(this.rawJsonText);
       } catch (e) {
-        new Notice("Invalid JSON syntax in Raw JSON tab. Please fix it before switching.");
+        new Notice("Invalid JSON syntax in raw JSON tab. Please fix it before switching.");
         return;
       }
     }
@@ -1089,7 +1091,7 @@ class EditContainerGroupModal extends Modal {
         .setDesc("Optional prefix for remote or wrapper commands, for example sudo -n. Lotus does not prompt for passwords.")
         .addText((text) => {
           text
-            .setPlaceholder("sudo -n")
+            .setPlaceholder("Sudo -n")
             .setValue(this.configObj.elevation.commandPrefix || "")
             .onChange((val) => {
               this.configObj.elevation.commandPrefix = val.trim() || undefined;
@@ -1102,8 +1104,8 @@ class EditContainerGroupModal extends Modal {
         this.configObj.wsl = {};
       }
       new Setting(containerEl)
-        .setName("Use Interactive Shell")
-        .setDesc("Use interactive login shell flags (-i -l) to ensure ~/.bashrc initialization works (e.g., for NVM).")
+        .setName("Use interactive shell")
+        .setDesc("Use interactive login shell flags (-i -l) to ensure ~/.bashrc initialization works (e.g., for nvm).")
         .addToggle((toggle) => {
           toggle
             .setValue(this.configObj.wsl.interactive ?? false)
@@ -1121,7 +1123,7 @@ class EditContainerGroupModal extends Modal {
       }
 
       new Setting(containerEl)
-        .setName("SSH Target")
+        .setName("SSH target")
         .setDesc("Remote SSH target, for example user@vps or user@host.")
         .addText((text) => {
           text
@@ -1132,8 +1134,8 @@ class EditContainerGroupModal extends Modal {
         });
 
       new Setting(containerEl)
-        .setName("Remote Workspace")
-        .setDesc("Remote folder where Lotus uploads snippets before running them.")
+        .setName("Remote workspace")
+        .setDesc("Remote folder where lotus uploads snippets before running them.")
         .addText((text) => {
           text
             .setValue(this.configObj.ssh.workspace || this.configObj.ssh.remoteWorkspace || "/tmp/lotus")
@@ -1152,8 +1154,8 @@ class EditContainerGroupModal extends Modal {
       }
 
       new Setting(containerEl)
-        .setName("SSH Target")
-        .setDesc("SSH target address (e.g. user@hostname or localhost -p 2222).")
+        .setName("SSH target")
+        .setDesc("SSH target address (e.g. User@hostname or localhost -p 2222).")
         .addText((text) => {
           text
             .setValue(this.configObj.qemu.sshTarget || "")
@@ -1163,7 +1165,7 @@ class EditContainerGroupModal extends Modal {
         });
 
       new Setting(containerEl)
-        .setName("Remote Workspace")
+        .setName("Remote workspace")
         .setDesc("Remote folder path to copy code snippets and run commands (e.g., /home/user/workspace).")
         .addText((text) => {
           text
@@ -1174,8 +1176,8 @@ class EditContainerGroupModal extends Modal {
         });
 
       new Setting(containerEl)
-        .setName("SSH Executable")
-        .setDesc("Optional. Path to SSH client executable (defaults to ssh).")
+        .setName("SSH executable")
+        .setDesc("Optional. Path to SSH client executable (defaults to SSH).")
         .addText((text) => {
           text
             .setValue(this.configObj.qemu.sshExecutable || "")
@@ -1185,7 +1187,7 @@ class EditContainerGroupModal extends Modal {
         });
 
       new Setting(containerEl)
-        .setName("SSH Arguments")
+        .setName("SSH arguments")
         .setDesc("Optional. Additional SSH CLI flags.")
         .addText((text) => {
           text
@@ -1209,7 +1211,7 @@ class EditContainerGroupModal extends Modal {
       }
 
       new Setting(containerEl)
-        .setName("Custom Executable")
+        .setName("Custom executable")
         .setDesc("Path to custom runtime wrapper executable or script.")
         .addText((text) => {
           text
@@ -1220,7 +1222,7 @@ class EditContainerGroupModal extends Modal {
         });
 
       new Setting(containerEl)
-        .setName("Custom Arguments")
+        .setName("Custom arguments")
         .setDesc("Optional. Command arguments. Use {request} for JSON config path.")
         .addText((text) => {
           text
@@ -1235,8 +1237,8 @@ class EditContainerGroupModal extends Modal {
   renderRemoteTransportSettings(containerEl: HTMLElement, remoteConfig: any, includeSshSettings: boolean) {
     if (includeSshSettings) {
       new Setting(containerEl)
-        .setName("SSH Executable")
-        .setDesc("Optional. Path to SSH client executable, defaults to ssh.")
+        .setName("SSH executable")
+        .setDesc("Optional. Path to SSH client executable, defaults to SSH).")
         .addText((text) => {
           text
             .setValue(remoteConfig.sshExecutable || "")
@@ -1246,7 +1248,7 @@ class EditContainerGroupModal extends Modal {
         });
 
       new Setting(containerEl)
-        .setName("SSH Arguments")
+        .setName("SSH arguments")
         .setDesc("Optional. Additional SSH CLI flags, such as -p 2222.")
         .addText((text) => {
           text
@@ -1259,11 +1261,11 @@ class EditContainerGroupModal extends Modal {
 
     new Setting(containerEl)
       .setName("Remote upload mode")
-      .setDesc("Inline SSH uses one SSH session per run, so password prompts happen once and interactive stdin stays available. Use SCP compatibility only when the remote shell cannot handle inline uploads.")
+      .setDesc("Inline SSH uses one SSH session per run, so password prompts happen once and interactive stdin stays available. Use scp compatibility only when the remote shell cannot handle inline uploads.")
       .addDropdown((dropdown) => {
         dropdown
           .addOption("inline", "Inline SSH")
-          .addOption("scp", "SCP compatibility")
+          .addOption("scp", "Scp compatibility")
           .setValue(remoteConfig.uploadMode || "inline")
           .onChange((value) => {
             remoteConfig.uploadMode = value === "scp" ? "scp" : undefined;
@@ -1272,7 +1274,7 @@ class EditContainerGroupModal extends Modal {
 
     new Setting(containerEl)
       .setName("SSH auth socket")
-      .setDesc("Optional. Override SSH_AUTH_SOCK for this group, useful for Bitwarden or another SSH agent.")
+      .setDesc("Optional. Override SSH_auth_sock for this group, useful for bitwarden or another SSH agent.")
       .addText((text) => {
         text
           .setPlaceholder("/path/to/agent.sock")
@@ -1283,8 +1285,8 @@ class EditContainerGroupModal extends Modal {
       });
 
     new Setting(containerEl)
-      .setName("SCP Executable")
-      .setDesc("Optional. Path to SCP executable, defaults to scp. Used only when remote upload mode is SCP compatibility.")
+      .setName("SCP executable")
+      .setDesc("Optional. Path to scp executable, defaults to scp. Used only when remote upload mode is scp compatibility.")
       .addText((text) => {
         text
           .setValue(remoteConfig.scpExecutable || "")
@@ -1294,8 +1296,8 @@ class EditContainerGroupModal extends Modal {
       });
 
     new Setting(containerEl)
-      .setName("SCP Arguments")
-      .setDesc("Optional. Additional SCP CLI flags. Use -P for ports with OpenSSH scp. Used only when remote upload mode is SCP compatibility.")
+      .setName("SCP arguments")
+      .setDesc("Optional. Additional scp CLI flags. Use -p for ports with openssh scp. Used only when remote upload mode is scp compatibility.")
       .addText((text) => {
         text
           .setValue(remoteConfig.scpArgs || "")
@@ -1363,10 +1365,10 @@ class EditContainerGroupModal extends Modal {
     }
     const filters = this.configObj.outputFilters;
 
-    containerEl.createEl("h3", { text: "Output Filters", attr: { style: "margin-top: 1.5rem;" } });
+    containerEl.createEl("h3", { text: "Output filters", attr: { style: "margin-top: 1.5rem;" } });
 
     new Setting(containerEl)
-      .setName("Strip ANSI control sequences")
+      .setName("Strip ansi control sequences")
       .setDesc("Remove terminal color/control escape sequences from stdout and stderr.")
       .addToggle((toggle) => {
         toggle
@@ -1413,7 +1415,7 @@ class EditContainerGroupModal extends Modal {
   }
 
   renderLanguagesTab(containerEl: HTMLElement) {
-    containerEl.createEl("h3", { text: "Configured Languages" });
+    containerEl.createEl("h3", { text: "Configured languages" });
 
     if (!this.configObj.languages) {
       this.configObj.languages = {};
@@ -1433,7 +1435,7 @@ class EditContainerGroupModal extends Modal {
 
         new Setting(card)
           .setName("Use default configuration")
-          .setDesc("If checked, Lotus will run this language using its built-in commands/extensions.")
+          .setDesc("If checked, lotus will run this language using its built-in commands/extensions.")
           .addToggle((toggle) => {
             toggle
               .setValue(isDefault)
@@ -1483,7 +1485,7 @@ class EditContainerGroupModal extends Modal {
         new Setting(card)
           .addButton((btn) => {
             btn
-              .setButtonText("Remove Language")
+              .setButtonText("Remove language")
               .setWarning()
               .onClick(() => {
                 delete this.configObj.languages[langName];
@@ -1494,17 +1496,17 @@ class EditContainerGroupModal extends Modal {
     }
 
     // Add Language Section
-    containerEl.createEl("h3", { text: "Add Language Mapping", attr: { style: "margin-top: 1.5rem;" } });
+    containerEl.createEl("h3", { text: "Add language mapping", attr: { style: "margin-top: 1.5rem;" } });
     new Setting(containerEl)
       .setName("Language ID")
-      .setDesc("e.g. python, javascript, node, sh")
+      .setDesc("E.g. Python, JavaScript, node, sh")
       .addText((text) => {
         text.setValue(this.newLanguageName).onChange((val) => {
           this.newLanguageName = val.trim().toLowerCase();
         });
       })
       .addButton((btn) => {
-        btn.setButtonText("+ Add").setCta().onClick(() => {
+        btn.setButtonText("+ add").setCta().onClick(() => {
           if (!this.newLanguageName) {
             new Notice("Please enter a language name.");
             return;
@@ -1534,14 +1536,14 @@ class EditContainerGroupModal extends Modal {
 
     if (this.dockerfileText === null) {
       containerEl.createEl("p", {
-        text: "No Dockerfile exists in this execution group directory.",
+        text: "No dockerfile exists in this execution group directory.",
         cls: "setting-item-description",
       });
 
       new Setting(containerEl)
         .addButton((btn) => {
           btn
-            .setButtonText("Create Dockerfile")
+            .setButtonText("Create dockerfile")
             .setCta()
             .onClick(() => {
               this.dockerfileText = [
@@ -1559,7 +1561,7 @@ class EditContainerGroupModal extends Modal {
         });
     } else {
       new Setting(containerEl)
-        .setName("Dockerfile Content")
+        .setName("Dockerfile content")
         .setDesc("Define the build steps for your environment container.")
         .addTextArea((text) => {
           text.inputEl.rows = 15;
@@ -1598,7 +1600,7 @@ class EditContainerGroupModal extends Modal {
       try {
         this.configObj = JSON.parse(this.rawJsonText);
       } catch (e) {
-        new Notice("Invalid JSON syntax in Raw JSON tab. Please fix it before saving.");
+        new Notice("Invalid JSON syntax in raw JSON tab. Please fix it before saving.");
         return;
       }
     }
@@ -1609,15 +1611,15 @@ class EditContainerGroupModal extends Modal {
       return;
     }
     if (this.configObj.runtime === "qemu" && (!this.configObj.qemu?.sshTarget || !this.configObj.qemu?.remoteWorkspace)) {
-      new Notice("QEMU runtime requires SSH Target and Remote Workspace.");
+      new Notice("Qemu runtime requires SSH target and remote workspace.");
       return;
     }
     if (this.configObj.runtime === "ssh" && (!this.configObj.ssh?.target || !this.configObj.ssh?.workspace)) {
-      new Notice("SSH runtime requires SSH Target and Remote Workspace.");
+      new Notice("SSH runtime requires SSH target and remote workspace.");
       return;
     }
     if (this.configObj.runtime === "custom" && !this.configObj.custom?.executable) {
-      new Notice("Custom runtime requires Custom Executable.");
+      new Notice("Custom runtime requires custom executable.");
       return;
     }
 
