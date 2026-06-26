@@ -1,3 +1,4 @@
+<video src="https://youtu.be/PzJ5QUtpxws" width="100%" controls></video>
 # lotus
 
 Obsidian plugin for executing ordinary fenced Markdown code blocks.
