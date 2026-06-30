@@ -60,6 +60,13 @@ interface lotusContainerEditorWslConfig {
   [key: string]: unknown;
 }
 
+interface lotusContainerEditorPersistentConfig {
+  enabled?: boolean;
+  name?: string;
+  keepAliveCommand?: string;
+  [key: string]: unknown;
+}
+
 interface lotusContainerEditorCustomConfig {
   executable?: string;
   args?: string;
@@ -87,6 +94,7 @@ interface lotusContainerEditorLanguageConfig {
 interface lotusContainerEditorConfig {
   runtime?: lotusContainerEditorRuntime;
   image?: string;
+  persistent?: boolean | lotusContainerEditorPersistentConfig;
   elevation?: lotusContainerEditorElevation;
   wsl?: lotusContainerEditorWslConfig;
   ssh?: lotusContainerEditorRemoteConfig;
@@ -224,6 +232,18 @@ export class lotusSettingTab extends PluginSettingTab {
           await this.lotusPlugin.saveSettings();
         }),
       );
+
+    if (isCompileFeatureAllowed("rich-displays")) {
+      new Setting(containerEl)
+        .setName("Show code graph button")
+        .setDesc("Show the toolbar button that visualizes a block's source as a graph. Disable this if you only want the normal run button.")
+        .addToggle((toggle) =>
+          toggle.setValue(this.lotusPlugin.settings.showCodeVisualizationButton ?? true).onChange(async (value) => {
+            this.lotusPlugin.settings.showCodeVisualizationButton = value;
+            await this.lotusPlugin.saveSettings();
+          }),
+        );
+    }
 
     new Setting(containerEl)
       .setName("Show Obsidian context warning")
@@ -626,6 +646,9 @@ export class lotusSettingTab extends PluginSettingTab {
     this.addRuntimeTextSetting(containerEl, ["lean"], "Lean executable", "Command or path for checking Lean blocks.", "leanExecutable");
     this.addRuntimeTextSetting(containerEl, ["coq"], "Coq executable", "Command or path for checking Coq blocks with coqc.", "coqExecutable");
     this.addRuntimeTextSetting(containerEl, ["smtlib"], "SMT solver", "Command or path for SMT-LIB blocks. Defaults to z3.", "smtExecutable");
+    if (isCompileFeatureAllowed("rich-displays")) {
+      this.addTextSetting(containerEl, "Graphviz executable", "Command or path for dot. Lotus uses this to turn Graphviz DOT display outputs into SVG.", "graphvizExecutable");
+    }
   }
 
   private addRuntimeTextSetting<K extends keyof lotusPluginSettings>(containerEl: HTMLElement, languageIds: string[], name: string, description: string, key: K): void {
@@ -1316,6 +1339,47 @@ class EditContainerGroupModal extends Modal {
         });
     }
 
+    if (this.configObj.runtime === "docker" || this.configObj.runtime === "podman") {
+      const persistent = this.getPersistentConfig();
+      new Setting(containerEl)
+        .setName("Persistent container")
+        .setDesc("Start this Docker/Podman container once and run snippets through exec so filesystem and process state can persist between runs.")
+        .addToggle((toggle) => {
+          toggle
+            .setValue(persistent.enabled === true)
+            .onChange((value) => {
+              persistent.enabled = value;
+              this.renderActiveTab();
+            });
+        });
+
+      if (persistent.enabled) {
+        new Setting(containerEl)
+          .setName("Persistent container name")
+          .setDesc("Optional stable container name. Leave blank to derive one from the execution group name.")
+          .addText((text) => {
+            text
+              .setPlaceholder(`lotus-container-${this.groupName.toLowerCase().replace(/[^a-z0-9_.-]/g, "-")}-persistent`)
+              .setValue(persistent.name || "")
+              .onChange((val) => {
+                persistent.name = val.trim() || undefined;
+              });
+          });
+
+        new Setting(containerEl)
+          .setName("Keep-alive command")
+          .setDesc("Command used as the persistent container's main process.")
+          .addText((text) => {
+            text
+              .setPlaceholder("sleep infinity")
+              .setValue(persistent.keepAliveCommand || "")
+              .onChange((val) => {
+                persistent.keepAliveCommand = val.trim() || undefined;
+              });
+          });
+      }
+    }
+
     if (!this.configObj.elevation || typeof this.configObj.elevation !== "object") {
       this.configObj.elevation = { mode: "default" };
     }
@@ -1491,8 +1555,15 @@ class EditContainerGroupModal extends Modal {
             .onChange((val) => {
               custom.args = val.trim() || undefined;
             });
-        });
+      });
     }
+  }
+
+  getPersistentConfig(): lotusContainerEditorPersistentConfig {
+    if (!this.configObj.persistent || typeof this.configObj.persistent !== "object" || Array.isArray(this.configObj.persistent)) {
+      this.configObj.persistent = { enabled: this.configObj.persistent === true };
+    }
+    return this.configObj.persistent;
   }
 
   renderRemoteTransportSettings(containerEl: HTMLElement, remoteConfig: lotusContainerEditorRemoteConfig, includeSshSettings: boolean) {

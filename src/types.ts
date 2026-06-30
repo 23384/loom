@@ -82,6 +82,36 @@ export interface lotusRunResult {
   timedOut: boolean;
   cancelled: boolean;
   warning?: string;
+  displays?: lotusDisplayOutput[];
+}
+
+export type lotusDisplayRole = "result" | "visualization" | "diagnostic" | "artifact";
+
+export interface lotusDisplayOutput {
+  id?: string;
+  title?: string;
+  role?: lotusDisplayRole;
+  data: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export type lotusDisplayRendererCleanup = () => void;
+
+export interface lotusDisplayRendererContext {
+  mime: string;
+  value: unknown;
+  display: lotusDisplayOutput;
+  metadata: Record<string, unknown>;
+  visibleLines: number;
+}
+
+export interface lotusDisplayRenderer {
+  id?: string;
+  mimeTypes: readonly string[];
+  render(
+    container: HTMLElement,
+    context: lotusDisplayRendererContext,
+  ): void | lotusDisplayRendererCleanup | Promise<void | lotusDisplayRendererCleanup>;
 }
 
 export interface lotusRunner {
@@ -151,6 +181,7 @@ export interface lotusPluginSettings {
   haskellExecutable: string;
   javaCompilerExecutable: string;
   javaExecutable: string;
+  graphvizExecutable: string;
   llvmInterpreterExecutable: string;
   ebpfClangExecutable: string;
   ebpfBpftoolExecutable: string;
@@ -164,6 +195,7 @@ export interface lotusPluginSettings {
   writeOutputToNote: boolean;
   outputVisibleLines: number;
   autoRunOnFileOpen: boolean;
+  showCodeVisualizationButton: boolean;
   hashCodeBlocks: boolean;
   signingMode: "passphrase" | "rsa" | "ssh";
   signingSignerId: string;
