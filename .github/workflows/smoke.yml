@@ -138,3 +138,25 @@ jobs:
         with:
           name: lotus-smoke-${{ matrix.profile }}-${{ matrix.container }}
           path: .lotus/artifacts/smoke/${{ matrix.profile }}
+
+  required-smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    needs: smoke-matrix
+    if: ${{ always() }}
+    steps:
+      - name: Require smoke matrix success
+        env:
+          RESULT: ${{ needs.smoke-matrix.result }}
+        run: test "${RESULT}" = "success"
+
+  required-smoke-full:
+    name: smoke (full)
+    runs-on: ubuntu-latest
+    needs: smoke-matrix
+    if: ${{ always() }}
+    steps:
+      - name: Require smoke matrix success
+        env:
+          RESULT: ${{ needs.smoke-matrix.result }}
+        run: test "${RESULT}" = "success"
